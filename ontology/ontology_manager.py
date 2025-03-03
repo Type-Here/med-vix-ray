@@ -1,15 +1,21 @@
 import pandas as pd
 import networkx as nx
+import tokenizer as tk
 import json
 
 from owlready2 import Ontology, ThingClass
+
+_prefLabel = "preferred_label"
+_definition = "definition"
+_subclassOf = "subclass_of"
+_synonym = "synonym"
 
 class OntologyManager:
     """
         Class to manage and extract data from an ontology.
     """
     def __init__(self, ontology: Ontology, obtainable_labels: list = None,
-                 exclude_labels: list = None, anatomical_labels: list = None):
+                 exclude_labels: list = None, anatomical_labels: list = None, classification_labels: list = None):
         """
         Initializes the OntologyManager with the given ontology and optional parameters.
         :param ontology: Ontology object.
@@ -20,8 +26,15 @@ class OntologyManager:
         super().__init__()
         self.onto = ontology
         self.obtainable_labels = obtainable_labels or []
-        self.exclude_labels = exclude_labels or []
-        self.anatomical_labels = anatomical_labels or []
+        self.exclude_labels = tk.tokenize_and_stem_list(exclude_labels) or []
+        self.anatomical_labels = tk.tokenize_and_stem_list(anatomical_labels) or []
+        self.classification_labels = tk.tokenize_and_stem_list(classification_labels) or []
+        self.relevant_list = self.obtainable_labels + self.anatomical_labels
+
+        print(f"✅ OntologyManager initialized with \n Obtainable labels:{self.obtainable_labels};")
+        print(f" \n Exclude Labels: {self.exclude_labels};"
+              f" \n Anatomical labels: {self.anatomical_labels};"
+              f"\n Classification Labels: {self.classification_labels};")
 
     def get_classes(self):
         """
@@ -30,39 +43,40 @@ class OntologyManager:
         """
         return list(self.onto.classes())
 
-    def get_pref_label(self, cls):
-        """ Returns the human-readable name of the class (Preferred_name or alternative).
-        Args:
-            cls (Thing or str): The class or its name.
-        Returns:
-            str: The preferred label of the class.
-
-        1. If cls is an instance of Thing, it returns the preferred label.
-        2. If cls is a string, it returns the preferred label of the class with that name after searching for it.
-        3. If cls is neither, it raises a TypeError.
-        4. If the class has no preferred label, it returns the class name.
-
-        Raises:
-            TypeError: If cls is neither a Thing nor a string.
+    def get_property(self, cls, property_name_list):
         """
+        Get the property of a class. Check if the class has the properties defined in the property_name_list and return the first one found.
+        Args:
+            cls (ThingClass or str): Class to retrieve properties from or class name (iri) to retrieve properties from.
+            property_name_list (list): List of property names to retrieve.
+        Returns:
+            str: The value of the first property found or None if not found.
+        """
+
+        # If cls is an instance of Thing get the label from list
         if isinstance(cls, ThingClass):
-            # If cls is an instance of Thing get the preferred label
             for annotation in self.onto.annotation_properties():
                 value = getattr(cls, annotation.name, None)
-                if value and ("Preferred_name" in annotation.name or "label" in annotation.name):
-                        return str(value[0])  # Convert locstr to string
-            return cls.name # Default: return the name of the class if no preferred label is found
+                # Check if the property name from annotation is in the list
+                if value and any(label in annotation.name for label in property_name_list):
+                    return str(value[0])  # Convert locstr to string
+            if "Preferred_name" in property_name_list:
+                return cls.name
+            return None # Default: return None if no property is found
 
         elif isinstance(cls, str):
             # Search for the class by name
             cls = self.onto.search_one(iri=f"*{cls}")
             if cls:
                 # Recursively call the function
-                return self.get_pref_label(cls)
-            return cls.name
+                return self.get_property(cls, property_name_list)
+            if "Preferred_name" in property_name_list:
+                return cls.name
+            return None
 
         else:
             raise TypeError("cls must be an instance of Thing or str")
+
 
     def get_is_subclass_of(self, cls):
         """ Returns the parent class of the given class.
@@ -86,12 +100,12 @@ class OntologyManager:
         else:
             raise TypeError("cls must be an instance of Thing or str")
 
-    def extract_filtered_data(self):
+    def extract_filtered_data(self, label_list):
         """ Extracts only relevant data related to obtainable and anatomy label lists. """
         data = []
         for cls in self.get_classes():
             rid = cls.name  # ID RadLex
-            pref_label = self.get_pref_label(cls) or "N/A"
+            pref_label = self.get_property(cls, label_list) or "N/A"
             definition = getattr(cls, "definition", ["N/A"])[0]
             parent = cls.is_a[0].name if cls.is_a else "N/A"
 
