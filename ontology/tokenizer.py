@@ -13,6 +13,9 @@ def tokenize_label(label):
     Returns:
         list: List of keywords with stemming applied.
     """
+    if not label:
+        return None
+
     label = label.lower()
     tokens = re.findall(r'\b\w+\b', label)  # Extract words, ignoring punctuation
     return tokens
