@@ -13,8 +13,8 @@ def tokenize_label(label):
     Returns:
         list: List of keywords with stemming applied.
     """
-    label = label.lower()  # Porta tutto in minuscolo
-    tokens = re.findall(r'\b\w+\b', label)  # Estrae solo parole, ignorando punteggiatura
+    label = label.lower()
+    tokens = re.findall(r'\b\w+\b', label)  # Extract words, ignoring punctuation
     return tokens
 
 
@@ -40,6 +40,9 @@ def tokenize_and_stem_list(word_list):
     Returns:
         list: List of stemmed tokens.
     """
+    if not word_list:
+        return None
+
     tokenized_list = set()
     for word in word_list:
         tokens = tokenize_label(word)
