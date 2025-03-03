@@ -145,33 +145,71 @@ class RadLexGraphBuilder:
 
         self.graph = nx.DiGraph()  # Directed graph
 
-        # Define categories of interest
+        # Properties Label Map
+        self.properties_label_map = {
+            "preferred_label": ["Preferred_name", "label"],
+            "definition": ["definition"],
+            "subclass_of": ["subClassOf", "sub_class_of"],
+            "synonym": ["synonym"],
+        }
 
+        self.relationships= ["Has_finding", "Has_location", "May_Cause", "Origin_of",
+                     "Member_of", "Has_member", "Has_Subtype"]
 
-    def get_pref_label(self, cls):
+    def get_property(self, cls, property_key):
         """
-        Calls the method from OntologyManager with the same name.
+        Get the property of a class.
+        Check if the class has the properties defined in the property_name_list and return the first one found.
+        Args:
+            cls (ThingClass or str): Class to retrieve properties from or class name (iri) to retrieve properties from.
+            property_key: Property name to retrieve as key defined in self.properties_label_map.
         Returns:
-            str: 'preferred_name' of the class. If not found, returns the class name.
-        See also:
-            - OntologyManager.get_pref_label
+            str: The value of the first property found or None if not found.
+        See Also:
+            OntologyManager.get_property
         """
-        return self.ontology_manager.get_pref_label(cls)
+        instance = self.properties_label_map.get(property_key)
+        return self.ontology_manager.get_property(cls, instance)
+
 
     def is_relevant_entity(self, cls, root_label="RadLex entity"):
         """
         Check if the class belongs to one of the relevant categories.
         Args:
             cls (Thing): Class to check.
+            root_label (str): Root label to check against.
+                If the class is a subclass of this label, check for relevance in classification_labels instead (if any).
         Returns:
             bool: True if the class is relevant, False otherwise.
         """
+        # Check if the class is a subclass of the root label
         subclass = self.ontology_manager.get_is_subclass_of(cls)
-        if subclass and subclass == root_label:
-            return True
+        if subclass and subclass == root_label and self.ontology_manager.classification_labels:
+                # Check if the class belongs to one of the classification labels after tokenization
+                return any(cat in tk.tokenize_label(self.get_property(cls, _prefLabel)) for cat in self.ontology_manager.classification_labels)
 
-        pref_label = self.get_pref_label(cls).lower()
-        return any(cat in pref_label for cat in self.ontology_manager.obtainable_labels + self.ontology_manager.anatomical_labels)
+        # Check: if the class is a leaf node or has no subclasses, check if it belongs to anatomical or obtainable labels
+        elif cls.subclasses() is None or not list(cls.subclasses()):
+            pref_label = tk.tokenize_label(self.get_property(cls, _prefLabel))
+            return any(cat in pref_label for cat in self.ontology_manager.relevant_list)
+
+        return True
+
+    def add_edge_from_attributes(self, source):
+        """
+        Adds an edge to the graph if it doesn't exist.
+        Args:
+            source (str): Source node ID.
+        """
+        # Add relationships
+        for prop in self.relationships:
+            if hasattr(source, prop):
+                for related_cls in getattr(source, prop):
+                    related_rid = related_cls.name
+                    related_label = self.get_property(related_cls, _prefLabel)
+                    if self.is_relevant_entity(related_cls):  # Keep only relevant relationships
+                        self.graph.add_node(related_rid, label=related_label, type="Finding/Location")
+                        self.graph.add_edge(source, related_rid, relation=prop)
 
     def add_node_with_hierarchy(self, cls, parent=None):
         """
@@ -181,18 +219,22 @@ class RadLexGraphBuilder:
             parent (str): Parent class ID.
         """
         rid = cls.name
-        pref_label = self.get_pref_label(cls)
+        pref_label = self.get_property(cls, _prefLabel)
         node_type = cls.is_a[0].name if cls.is_a else "Unknown"
 
         if rid not in self.graph:
-            self.graph.add_node(rid, label=pref_label, type=node_type)
+            attributes = {prop: getattr(cls, prop, "Unknown") for prop in dir(cls) if
+                          not prop.startswith("_") and isinstance(getattr(cls, prop, None), str)}
+            attributes.update({"label": pref_label, "type": node_type})
+            self.graph.add_node(rid, **attributes)
 
         if parent:
             self.graph.add_edge(parent, rid, relation="subclass_of")
 
         # Scan for subclasses recursively
         for subclass in cls.subclasses():
-            self.add_node_with_hierarchy(subclass, rid)
+            if self.is_relevant_entity(subclass):
+                self.add_node_with_hierarchy(subclass, rid)
 
     def build_graph(self):
         """
@@ -206,52 +248,14 @@ class RadLexGraphBuilder:
 
         print("✅ RadLex entity trovato! Scansionando sottoclassi...")
 
-        # Partiamo da RadLex entity e scendiamo nelle sottoclassi
+        # Starts from RadLex entity and scans subclasses
         for cls in radlex_entity.subclasses():
-            self.add_node_with_hierarchy(cls)
+            if self.is_relevant_entity(cls):
+                self.add_node_with_hierarchy(cls)
 
-        print(f"✅ Nodi trovati: {self.graph.number_of_nodes()}, Archi trovati: {self.graph.number_of_edges()}")
 
-    def build_graph_old(self):
-        """
-        Build the graph filtering only entities under 'RadLex entity'.
-        1. Finds the 'RadLex entity' class.
-        2. Iterates through its descendants.
-        3. Adds nodes and edges for relevant entities.
-        4. Filters out irrelevant entities.
-        5. Saves the graph in JSON, CSV, and GraphML formats.
-        """
-        radlex_entity = self.onto.search_one(label=self.root_label)  # Finds the 'RadLex entity'
-
-        if not radlex_entity:
-            print(f"❌ Errore: '{self.root_label}' non trovato.")
-            return
-
-        print(f"✅ {radlex_entity}  trovato! Costruzione del grafo...")
-        print("Inizio a costruire il grafo...")
-        print("Discendenti di RadLex entity:")
-        print(radlex_entity.descendants())
-
-        # Create nodes and connect only useful relationships
-        for cls in radlex_entity.descendants():
-            rid = cls.name
-            pref_label = self.get_pref_label(cls)
-            node_type = cls.is_a[0].name if cls.is_a else "Unknown"
-
-            if self.is_relevant_entity(cls):  # Filter: add only relevant entities
-                self.graph.add_node(rid, label=pref_label, type=node_type)
-
-                # Add relationships (has_finding, has_location)
-                for prop in ["Has_finding", "Has_location", "May_Cause", "Origin_of", "Member_of", "Has_member"]:
-                    if hasattr(cls, prop):
-                        for related_cls in getattr(cls, prop):
-                            related_rid = related_cls.name
-                            related_label = self.get_pref_label(related_cls)
-                            if self.is_relevant_entity(related_cls):  # Keep only relevant relationships
-                                self.graph.add_node(related_rid, label=related_label, type="Finding/Location")
-                                self.graph.add_edge(rid, related_rid, relation=prop)
-
-        print(f"✅ Nodi trovati: {self.graph.number_of_nodes()}, Archi trovati: {self.graph.number_of_edges()}")
+        print(f"✅ Nodi trovati: {self.graph.number_of_nodes()}, "
+              f"Archi trovati: {self.graph.number_of_edges()}")
 
     def save_graph(self, json_path="radlex_graph.json", csv_path="radlex_graph.csv", graphml_path="radlex_graph.graphml"):
         """
