@@ -122,6 +122,25 @@ class OntologyManager:
         else:
             raise TypeError("cls must be an instance of Thing or str")
 
+    def extract_data(self, cls, keywords_list):
+        """
+            Extracts data from an ontology individual.
+            Args:
+                cls (Thing): Class to extract data from.
+                keywords_list (list): List of keywords to extract data from. Keywords must be in _properties_label_map.
+            Returns:
+                dict: Extracted data.
+        """
+        pref_label = self.get_property(cls, _properties_label_map[_prefLabel])
+        node_type = cls.is_a[0].name if cls.is_a else "Unknown"
+
+        data = {}
+        for label in keywords_list:
+            value = self.get_property(cls, _properties_label_map[label])
+            data[label] = value or ""
+        data.update({"label": pref_label, "type": node_type})
+        return data
+
     def extract_filtered_data(self, label_list):
         """ Extracts only relevant data related to obtainable and anatomy label lists. """
         data = []
@@ -229,7 +248,12 @@ class RadLexGraphBuilder:
                     self.graph.add_node(related_rid, label=related_label, type="Finding/Location")
                     self.graph.add_edge(source, related_rid, relation=prop)
 
-    def add_node_with_hierarchy(self, cls, parent=None):
+    def __add_edge_to_children(self, cls):
+        for subclass in cls.subclasses():
+            if subclass.name in self.graph:
+                self.graph.add_edge(cls.name, subclass.name, relation="parent_of")
+
+    def __add_node_with_hierarchy(self, cls, parent=None):
         """
         Adds a node to the graph if it doesn't exist, and recursively connects its children.
         Args:
