@@ -228,13 +228,17 @@ class RadLexGraphBuilder:
             attributes.update({"label": pref_label, "type": node_type})
             self.graph.add_node(rid, **attributes)
 
-        if parent:
-            self.graph.add_edge(parent, rid, relation="subclass_of")
+        #if parent:
+        #    self.graph.add_edge(parent, rid, relation="subclass_of")
 
         # Scan for subclasses recursively
         for subclass in cls.subclasses():
             if self.is_relevant_entity(subclass):
-                self.add_node_with_hierarchy(subclass, rid)
+                self.__add_node_with_hierarchy(subclass, rid)
+                self.graph.add_edge(rid, subclass.name, relation="parent_of")
+
+        # Add Parent to Children Edges
+        #self.__add_edge_from_attributes(cls)
 
     def build_graph(self):
         """
@@ -251,13 +255,14 @@ class RadLexGraphBuilder:
         # Starts from RadLex entity and scans subclasses
         for cls in radlex_entity.subclasses():
             if self.is_relevant_entity(cls):
-                self.add_node_with_hierarchy(cls)
-
+                self.__add_node_with_hierarchy(cls)
+                self.graph.add_edge(radlex_entity.name, cls.name, relation="parent_of")
 
         print(f"✅ Nodi trovati: {self.graph.number_of_nodes()}, "
               f"Archi trovati: {self.graph.number_of_edges()}")
 
-    def save_graph(self, json_path="radlex_graph.json", csv_path="radlex_graph.csv", graphml_path="radlex_graph.graphml"):
+    def save_graph(self, json_path="radlex_graph.json",
+                   csv_path="radlex_graph.csv", graphml_path="radlex_graph.graphml"):
         """
         Save the graph in JSON, CSV, and GraphML formats.
         Args:
@@ -280,4 +285,3 @@ class RadLexGraphBuilder:
         # GraphML
         nx.write_graphml(self.graph, graphml_path)
         print(f"✅ Grafo salvato in GraphML: {graphml_path}")
-
