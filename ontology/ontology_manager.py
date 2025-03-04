@@ -10,10 +10,29 @@ _definition = "definition"
 _subclassOf = "subclass_of"
 _synonym = "synonym"
 
+# Properties Label Map
+_properties_label_map = {
+    "preferred_label": ["Preferred_name", "label"],
+    "definition": ["Definition"],
+    "synonym": ["Synonym"],
+}
+
+_relationship_edges ={
+    "cause" : "May_Cause",
+    "be_caused": "May_Be_Caused_By",
+    "origin" : "Origin_of",
+    "member" : "Has_Member",
+    "subclass_of": ["subClassOf", "sub_class_of"],
+}
+
+#relationships = ["Has_finding", "Has_location", "May_Cause", "Origin_of", "Member_of", "Has_member", "Has_Subtype"]
+
+
 class OntologyManager:
     """
-        Class to manage and extract data from an ontology.
-    """
+            Class to manage and extract data from an ontology.
+        """
+
     def __init__(self, ontology: Ontology, obtainable_labels: list = None,
                  exclude_labels: list = None, anatomical_labels: list = None, classification_labels: list = None):
         """
@@ -43,12 +62,15 @@ class OntologyManager:
         """
         return list(self.onto.classes())
 
-    def get_property(self, cls, property_name_list):
+    def get_property(self, cls, property_name_list, single_value=True):
         """
-        Get the property of a class. Check if the class has the properties defined in the property_name_list and return the first one found.
+        Get the property of a class. Check if the class has the properties
+        defined in the property_name_list and return the first one found.
         Args:
-            cls (ThingClass or str): Class to retrieve properties from or class name (iri) to retrieve properties from.
-            property_name_list (list): List of property names to retrieve.
+            cls (ThingClass or str): Class to retrieve properties from or
+            class name (iri) to retrieve properties from.
+            property_name_list (list[str]): List of property names to retrieve.
+            single_value (bool): If True, return the first value found, otherwise return all values.
         Returns:
             str: The value of the first property found or None if not found.
         """
@@ -59,10 +81,11 @@ class OntologyManager:
                 value = getattr(cls, annotation.name, None)
                 # Check if the property name from annotation is in the list
                 if value and any(label in annotation.name for label in property_name_list):
-                    return str(value[0])  # Convert locstr to string
+                    return str(value[0]) if single_value else [str(v) for v in value]  # Convert locstr to string or list of strings
+                    # return str(value[0])  # Convert locstr to string
             if "Preferred_name" in property_name_list:
                 return cls.name
-            return None # Default: return None if no property is found
+            return None  # Default: return None if no property is found
 
         elif isinstance(cls, str):
             # Search for the class by name
@@ -77,7 +100,6 @@ class OntologyManager:
         else:
             raise TypeError("cls must be an instance of Thing or str")
 
-
     def get_is_subclass_of(self, cls):
         """ Returns the parent class of the given class.
         Args:
@@ -89,7 +111,7 @@ class OntologyManager:
             for annotation in self.onto.annotation_properties():
                 value = getattr(cls, annotation.name, None)
                 if value and ("subClassOf" in annotation.name or "sub_class_of" in annotation.name):
-                        return str(value[0])  # Convert locstr to string
+                    return str(value[0])  # Convert locstr to string
             return None
 
         elif isinstance(cls, str):
@@ -132,9 +154,11 @@ class OntologyManager:
         return pd.DataFrame(data)  # Return as DataFrame
 
 
-
-
 class RadLexGraphBuilder:
+    """
+        Class to build a graph from the RadLex ontology.
+    """
+
     def __init__(self, ontology_manager: OntologyManager, root_label="RadLex entity"):
         """
         Init Ontology and create a directed graph.
@@ -144,17 +168,8 @@ class RadLexGraphBuilder:
         self.root_label = root_label  # Define root label
 
         self.graph = nx.DiGraph()  # Directed graph
+        self.keywords_list = _properties_label_map.keys()
 
-        # Properties Label Map
-        self.properties_label_map = {
-            "preferred_label": ["Preferred_name", "label"],
-            "definition": ["definition"],
-            "subclass_of": ["subClassOf", "sub_class_of"],
-            "synonym": ["synonym"],
-        }
-
-        self.relationships= ["Has_finding", "Has_location", "May_Cause", "Origin_of",
-                     "Member_of", "Has_member", "Has_Subtype"]
 
     def get_property(self, cls, property_key):
         """
@@ -168,9 +183,8 @@ class RadLexGraphBuilder:
         See Also:
             OntologyManager.get_property
         """
-        instance = self.properties_label_map.get(property_key)
+        instance = _properties_label_map.get(property_key)
         return self.ontology_manager.get_property(cls, instance)
-
 
     def is_relevant_entity(self, cls, root_label="RadLex entity"):
         """
@@ -178,15 +192,17 @@ class RadLexGraphBuilder:
         Args:
             cls (Thing): Class to check.
             root_label (str): Root label to check against.
-                If the class is a subclass of this label, check for relevance in classification_labels instead (if any).
+                If the class is a subclass of this label, check for relevance
+                in classification_labels instead (if any).
         Returns:
             bool: True if the class is relevant, False otherwise.
         """
         # Check if the class is a subclass of the root label
         subclass = self.ontology_manager.get_is_subclass_of(cls)
         if subclass and subclass == root_label and self.ontology_manager.classification_labels:
-                # Check if the class belongs to one of the classification labels after tokenization
-                return any(cat in tk.tokenize_label(self.get_property(cls, _prefLabel)) for cat in self.ontology_manager.classification_labels)
+            # Check if the class belongs to one of the classification labels after tokenization
+            return any(cat in tk.tokenize_label(self.get_property(cls, _prefLabel))
+                       for cat in self.ontology_manager.classification_labels)
 
         # Check: if the class is a leaf node or has no subclasses, check if it belongs to anatomical or obtainable labels
         elif cls.subclasses() is None or not list(cls.subclasses()):
@@ -195,21 +211,23 @@ class RadLexGraphBuilder:
 
         return True
 
-    def add_edge_from_attributes(self, source):
+    def __add_edge_from_attributes(self, source):
         """
         Adds an edge to the graph if it doesn't exist.
         Args:
             source (str): Source node ID.
         """
         # Add relationships
-        for prop in self.relationships:
-            if hasattr(source, prop):
-                for related_cls in getattr(source, prop):
-                    related_rid = related_cls.name
-                    related_label = self.get_property(related_cls, _prefLabel)
-                    if self.is_relevant_entity(related_cls):  # Keep only relevant relationships
-                        self.graph.add_node(related_rid, label=related_label, type="Finding/Location")
-                        self.graph.add_edge(source, related_rid, relation=prop)
+        for prop in _relationship_edges.values():
+            relation = self.ontology_manager.get_property(source, prop)
+            if not relation:
+                continue
+            for related_cls in getattr(source, prop):
+                related_rid = related_cls.name
+                related_label = self.get_property(related_cls, _prefLabel)
+                if self.is_relevant_entity(related_cls):  # Keep only relevant relationships
+                    self.graph.add_node(related_rid, label=related_label, type="Finding/Location")
+                    self.graph.add_edge(source, related_rid, relation=prop)
 
     def add_node_with_hierarchy(self, cls, parent=None):
         """
@@ -219,13 +237,11 @@ class RadLexGraphBuilder:
             parent (str): Parent class ID.
         """
         rid = cls.name
-        pref_label = self.get_property(cls, _prefLabel)
-        node_type = cls.is_a[0].name if cls.is_a else "Unknown"
 
         if rid not in self.graph:
-            attributes = {prop: getattr(cls, prop, "Unknown") for prop in dir(cls) if
-                          not prop.startswith("_") and isinstance(getattr(cls, prop, None), str)}
-            attributes.update({"label": pref_label, "type": node_type})
+            # Extract attributes
+            attributes = self.ontology_manager.extract_data(cls, list(_properties_label_map.keys()))
+            # Add node to the graph
             self.graph.add_node(rid, **attributes)
 
         #if parent:
@@ -251,7 +267,7 @@ class RadLexGraphBuilder:
             return
 
         print("✅ RadLex entity trovato! Scansionando sottoclassi...")
-
+        self.graph.add_node(radlex_entity.name, label=self.get_property(radlex_entity, _prefLabel), type="Root")
         # Starts from RadLex entity and scans subclasses
         for cls in radlex_entity.subclasses():
             if self.is_relevant_entity(cls):
