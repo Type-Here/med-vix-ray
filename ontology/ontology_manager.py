@@ -46,14 +46,13 @@ class OntologyManager:
         super().__init__()
         self.onto = ontology
         self.obtainable_labels = obtainable_labels or []
-        self.exclude_labels = tk.tokenize_and_stem_list(exclude_labels) or []
         self.anatomical_labels = tk.tokenize_and_stem_list(anatomical_labels) or []
         self.classification_labels = tk.tokenize_and_stem_list(classification_labels) or []
+
         self.relevant_list = self.obtainable_labels + self.anatomical_labels
 
         print(f"✅ OntologyManager initialized with \n Obtainable labels:{self.obtainable_labels[:5]};")
-        print(f" \n Exclude Labels: {self.exclude_labels[:5]};"
-              f" \n Anatomical labels: {self.anatomical_labels[:5]};"
+        print(f" \n Anatomical labels: {self.anatomical_labels[:5]};"
               f"\n Classification Labels: {self.classification_labels[:5]};")
 
     def get_classes(self):
@@ -143,6 +142,9 @@ class OntologyManager:
         return data
 
 
+# ================================ GRAPH BUILDER ==================================
+
+
 class RadLexGraphBuilder:
     """
         Class to build a graph from the RadLex ontology.
@@ -211,13 +213,18 @@ class RadLexGraphBuilder:
             related_classes = getattr(source, prop, [])
             for related_cls in related_classes:
                 related_rid = related_cls.name
-                related_label = self.get_property(related_cls, _prefLabel)
+                # Add node if it doesn't exist
                 if related_rid not in self.graph:
                     attributes = self.ontology_manager.extract_data(related_cls, list(_properties_label_map.keys()))
                     self.graph.add_node(related_rid, **attributes)
+                # Add edge
                 self.graph.add_edge(source.name, related_rid, relation=prop)
 
     def __add_edge_to_children(self, cls):
+        """
+        Adds edges to the graph for all subclasses of the given class.
+        :param cls (ThingClass): Class to add edges for.
+        """
         for subclass in cls.subclasses():
             if subclass.name in self.graph:
                 self.graph.add_edge(cls.name, subclass.name, relation="parent_of")
