@@ -22,16 +22,17 @@ _relationship_edges ={
     "be_caused": "May_Be_Caused_By",
     "origin" : "Origin_of",
     "member" : "Has_Member",
-    "subclass_of": ["subClassOf", "sub_class_of"],
 }
+
+__relative_labels = { "subclass_of": "subClassOf", "parent_of": "parent_of"}
 
 #relationships = ["Has_finding", "Has_location", "May_Cause", "Origin_of", "Member_of", "Has_member", "Has_Subtype"]
 
 
 class OntologyManager:
     """
-            Class to manage and extract data from an ontology.
-        """
+        Class to manage and extract data from an ontology.
+    """
 
     def __init__(self, ontology: Ontology, obtainable_labels: list = None,
                  exclude_labels: list = None, anatomical_labels: list = None, classification_labels: list = None):
@@ -50,10 +51,10 @@ class OntologyManager:
         self.classification_labels = tk.tokenize_and_stem_list(classification_labels) or []
         self.relevant_list = self.obtainable_labels + self.anatomical_labels
 
-        print(f"✅ OntologyManager initialized with \n Obtainable labels:{self.obtainable_labels};")
-        print(f" \n Exclude Labels: {self.exclude_labels};"
-              f" \n Anatomical labels: {self.anatomical_labels};"
-              f"\n Classification Labels: {self.classification_labels};")
+        print(f"✅ OntologyManager initialized with \n Obtainable labels:{self.obtainable_labels[:5]};")
+        print(f" \n Exclude Labels: {self.exclude_labels[:5]};"
+              f" \n Anatomical labels: {self.anatomical_labels[:5]};"
+              f"\n Classification Labels: {self.classification_labels[:5]};")
 
     def get_classes(self):
         """
@@ -141,37 +142,6 @@ class OntologyManager:
         data.update({"label": pref_label, "type": node_type})
         return data
 
-    def extract_filtered_data(self, label_list):
-        """ Extracts only relevant data related to obtainable and anatomy label lists. """
-        data = []
-        for cls in self.get_classes():
-            rid = cls.name  # ID RadLex
-            pref_label = self.get_property(cls, label_list) or "N/A"
-            definition = getattr(cls, "definition", ["N/A"])[0]
-            parent = cls.is_a[0].name if cls.is_a else "N/A"
-
-            # Filter only for obtainable labels
-            if any(label.lower() in pref_label.lower() for label in self.obtainable_labels):
-                data.append({
-                    "RID": rid,
-                    "Preferred_name": pref_label,
-                    "Definition": definition,
-                    "Parent": parent,
-                    "Type": "Pathology"
-                })
-
-            # Include anatomical labels
-            elif any(term.lower() in pref_label.lower() for term in self.anatomical_labels):
-                data.append({
-                    "RID": rid,
-                    "Preferred_name": pref_label,
-                    "Definition": definition,
-                    "Parent": parent,
-                    "Type": "Anatomical Structure"
-                })
-
-        return pd.DataFrame(data)  # Return as DataFrame
-
 
 class RadLexGraphBuilder:
     """
@@ -234,19 +204,18 @@ class RadLexGraphBuilder:
         """
         Adds an edge to the graph if it doesn't exist.
         Args:
-            source (str): Source node ID.
+            source (ThingClass): Source node.
         """
         # Add relationships
         for prop in _relationship_edges.values():
-            relation = self.ontology_manager.get_property(source, prop)
-            if not relation:
-                continue
-            for related_cls in getattr(source, prop):
+            related_classes = getattr(source, prop, [])
+            for related_cls in related_classes:
                 related_rid = related_cls.name
                 related_label = self.get_property(related_cls, _prefLabel)
-                if self.is_relevant_entity(related_cls):  # Keep only relevant relationships
-                    self.graph.add_node(related_rid, label=related_label, type="Finding/Location")
-                    self.graph.add_edge(source, related_rid, relation=prop)
+                if related_rid not in self.graph:
+                    attributes = self.ontology_manager.extract_data(related_cls, list(_properties_label_map.keys()))
+                    self.graph.add_node(related_rid, **attributes)
+                self.graph.add_edge(source.name, related_rid, relation=prop)
 
     def __add_edge_to_children(self, cls):
         for subclass in cls.subclasses():
@@ -276,6 +245,8 @@ class RadLexGraphBuilder:
             if self.is_relevant_entity(subclass):
                 self.__add_node_with_hierarchy(subclass, rid)
                 self.graph.add_edge(rid, subclass.name, relation="parent_of")
+                # Add relationships
+                self.__add_edge_from_attributes(cls)
 
         # Add Parent to Children Edges
         #self.__add_edge_from_attributes(cls)
