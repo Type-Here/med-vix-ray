@@ -3,7 +3,9 @@ import re
 
 stemmer = PorterStemmer()
 
-def tokenize_label(label):
+
+
+def __tokenize_label(label):
     """
     Tokenize a label into a list of keywords.
 
@@ -35,11 +37,14 @@ def match_label(label_tokens, word_list):
     return any(token in word_list for token in label_tokens)
 
 
+
+
+
 def tokenize_and_stem_list(word_list):
     """
     Tokenize and stem the words in list to recognize similar variants.
     Args:
-        word_list (list): List of words to be tokenized and stemmed.
+        word_list (list or str): List of words to be tokenized and stemmed or a single string.
     Returns:
         list: List of stemmed tokens.
     """
@@ -47,8 +52,11 @@ def tokenize_and_stem_list(word_list):
         return None
 
     tokenized_list = set()
+    if isinstance(word_list, str):
+        word_list = [word_list]
+
     for word in word_list:
-        tokens = tokenize_label(word)
+        tokens = __tokenize_label(word)
         stemmed_tokens = [stemmer.stem(token) for token in tokens]  # Apply stemming
         tokenized_list.update(stemmed_tokens)
 
