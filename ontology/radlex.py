@@ -9,7 +9,7 @@ from contextlib import contextmanager,redirect_stderr
 from os import devnull
 
 from ontology.ontology_manager import OntologyManager, RadLexGraphBuilder, ClassesOperations as CO
-from settings import RADLEX_DATA
+from settings import RADLEX_DATA, RADLEX_GRAPH_DIR, RADLEX_GRAPH
 
 @contextmanager
 def suppress_stderr():
@@ -21,11 +21,6 @@ def suppress_stderr():
 # Add the settings.py directory to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-# Load the ontology, suppressing error outputs
-with suppress_stderr():
-    onto = owl.get_ontology(RADLEX_DATA).load()
-
-
 mimic_labels = [
     "Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Enlarged Cardiomediastinum",
     "Fracture", "Lung Lesion", "Lung Opacity", "Pleural Effusion", "Pneumonia",
@@ -33,7 +28,6 @@ mimic_labels = [
 ]
 
 
-# ===== EXECUTION =====
 class_filter = {
     "anatomical entity": CO.CHECK_LEMMA,
     "clinical finding": CO.CHECK_LEMMA,
@@ -73,23 +67,46 @@ other_keywords = ["pneumonia", "pneumothorax", "pleural effusion", "atelectasis"
                   "opacity", "consolidation", "edema",  "enlarged", "radiolucent", "radiopaque",
                   "support devices", "glass", "neoplastic", "finding", "no finding"]
 
-ontology_manager = OntologyManager(ontology=onto, obtainable_labels=relevant_categories + other_keywords,
-                                   anatomical_labels=relevant_anatomy,
-                                   classification_labels=radlex_entity_children)
-builder = RadLexGraphBuilder(ontology_manager, root_label=root_label, class_filter=class_filter)
-
 #chester = onto.search_one(iri="*RID3852")
 #print(f"Chester: {chester}")
 #print(f"Chester subClass of: {ontology_manager.get_is_subclass_of(chester)}")
 #print(f"Chester subclasses: {list(chester.subclasses())}")
 
-with suppress_stderr():
-    builder.build_graph()
+# ======================= EXECUTION =======================
 
-isolated_nodes = [node for node in builder.graph.nodes() if builder.graph.degree(node) == 0]
-print(f"🔎 Check Nodi isolati: {len(isolated_nodes)}")
+def load_or_create_graph():
+    """
+    Load the graph if it exists, otherwise create it.
+    """
+    # Load the ontology, suppressing error outputs
+    with suppress_stderr():
+        onto = owl.get_ontology(RADLEX_DATA).load()
 
-builder.prune_graph()
-print(builder.count_subgraph_sizes())
+    ontology_manager = OntologyManager(ontology=onto, obtainable_labels=relevant_categories + other_keywords,
+                                       anatomical_labels=relevant_anatomy,
+                                       classification_labels=radlex_entity_children)
+    builder = RadLexGraphBuilder(ontology_manager, root_label=root_label, class_filter=class_filter)
 
-builder.save_graph()
+    if os.path.exists(RADLEX_GRAPH):
+        print("🚀 Graph already exists, loading...")
+        print(f"🔄 Loading existing graph from {RADLEX_GRAPH_DIR}")
+        builder.load_graph()
+
+    else:
+        print("🚧 Graph not found, creating a new one...")
+        print(f"🛠️ Creating new graph at {RADLEX_GRAPH_DIR}")
+
+        # Load the ontology, suppressing error outputs:
+        # Radlex contains cycles that owlready outputs as Warnings
+        with suppress_stderr():
+            builder.build_graph()
+
+        isolated_nodes = [node for node in builder.graph.nodes() if builder.graph.degree(node) == 0]
+        print(f"🔎 Check Nodi isolati: {len(isolated_nodes)}")
+
+        builder.prune_graph()
+        print(builder.count_subgraph_sizes())
+
+        builder.save_graph()
+
+    return builder.graph
