@@ -1,6 +1,7 @@
 import pandas as pd
 import networkx as nx
 import tokenizer as tk
+from enum import Enum
 import json
 
 from owlready2 import Ontology, ThingClass
@@ -24,9 +25,20 @@ _relationship_edges ={
     "member" : "Has_Member",
 }
 
-__relative_labels = { "subclass_of": "subClassOf", "parent_of": "parent_of"}
+_relative_labels = { "subclass_of": "subClassOf", "parent_of": "parent_of"}
 
-#relationships = ["Has_finding", "Has_location", "May_Cause", "Origin_of", "Member_of", "Has_member", "Has_Subtype"]
+
+# Enum for Classes Operations in relevance
+class ClassesOperations(Enum):
+    CHECK_KEY = 1 # Check if the class is in the filter keys
+    CHECK_LEMMA = 2 # Check if the class is in the tokenized and stemmed list
+    CHECK_DEFINITION = 3 # Check if class label or definition contains at least one keyword in tokenized and stemmed list
+    SKIP = 4 # Skip the class
+    KEEP_ALL = 5 # Keep all classes
+    CHECK_VALUES = 6 # Check if class label is in filter values
+
+
+# relationships = ["Has_finding", "Has_location", "May_Cause", "Origin_of", "Member_of", "Has_member", "Has_Subtype"]
 
 
 class OntologyManager:
@@ -35,17 +47,16 @@ class OntologyManager:
     """
 
     def __init__(self, ontology: Ontology, obtainable_labels: list = None,
-                 exclude_labels: list = None, anatomical_labels: list = None, classification_labels: list = None):
+                 anatomical_labels: list = None, classification_labels: list = None):
         """
         Initializes the OntologyManager with the given ontology and optional parameters.
         :param ontology: Ontology object.
         :param obtainable_labels: List of labels to be obtained
-        :param exclude_labels: List of labels to be excluded
         :param anatomical_labels: List of anatomical labels to be considered
         """
         super().__init__()
         self.onto = ontology
-        self.obtainable_labels = obtainable_labels or []
+        self.obtainable_labels = tk.tokenize_and_stem_list(obtainable_labels) or []
         self.anatomical_labels = tk.tokenize_and_stem_list(anatomical_labels) or []
         self.classification_labels = tk.tokenize_and_stem_list(classification_labels) or []
 
@@ -150,16 +161,21 @@ class RadLexGraphBuilder:
         Class to build a graph from the RadLex ontology.
     """
 
-    def __init__(self, ontology_manager: OntologyManager, root_label="RadLex entity"):
+    def __init__(self, ontology_manager: OntologyManager, class_filter = None, root_label="RadLex entity"):
         """
         Init Ontology and create a directed graph.
+        Args:
+            ontology_manager (OntologyManager): OntologyManager object.
+            class_filter (dict): Dictionary to filter classes.
+            root_label (str): Root label to start the graph building.
         """
         self.ontology_manager = ontology_manager
         self.onto = self.ontology_manager.onto
         self.root_label = root_label  # Define root label
 
+        self.class_filter = class_filter or {}
         self.graph = nx.DiGraph()  # Directed graph
-        self.keywords_list = _properties_label_map.keys()
+
 
 
     def get_property(self, cls, property_key):
@@ -177,7 +193,7 @@ class RadLexGraphBuilder:
         instance = _properties_label_map.get(property_key)
         return self.ontology_manager.get_property(cls, instance)
 
-    def is_relevant_entity(self, cls, root_label="RadLex entity"):
+    def is_relevant_entity(self, cls, root_label="RadLex entity", check_definition = False):
         """
         Check if the class belongs to one of the relevant categories.
         Args:
@@ -185,6 +201,7 @@ class RadLexGraphBuilder:
             root_label (str): Root label to check against.
                 If the class is a subclass of this label, check for relevance
                 in classification_labels instead (if any).
+            check_definition (bool): If True, check if the class label or definition. If False, check only the label.
         Returns:
             bool: True if the class is relevant, False otherwise.
         """
@@ -192,15 +209,19 @@ class RadLexGraphBuilder:
         subclass = self.ontology_manager.get_is_subclass_of(cls)
         if subclass and subclass == root_label and self.ontology_manager.classification_labels:
             # Check if the class belongs to one of the classification labels after tokenization
-            return any(cat in tk.tokenize_label(self.get_property(cls, _prefLabel))
+            return any(cat in tk.tokenize_and_stem_list(self.get_property(cls, _prefLabel))
                        for cat in self.ontology_manager.classification_labels)
 
         # Check: if the class is a leaf node or has no subclasses, check if it belongs to anatomical or obtainable labels
-        elif cls.subclasses() is None or not list(cls.subclasses()):
-            pref_label = tk.tokenize_label(self.get_property(cls, _prefLabel))
-            return any(cat in pref_label for cat in self.ontology_manager.relevant_list)
+        # elif cls.subclasses() is None or not list(cls.subclasses()):
+        else:
+            pref_label = tk.tokenize_and_stem_list(self.get_property(cls, _prefLabel))
+            return any(cat in pref_label for cat in self.ontology_manager.relevant_list) or (
+                check_definition and any(cat in tk.tokenize_and_stem_list(self.get_property(cls, _definition))
+                                                            for cat in self.ontology_manager.relevant_list)
+            )
 
-        return True
+        # return True
 
     def __add_edge_from_attributes(self, source):
         """
@@ -229,31 +250,112 @@ class RadLexGraphBuilder:
             if subclass.name in self.graph:
                 self.graph.add_edge(cls.name, subclass.name, relation="parent_of")
 
-    def __add_node_with_hierarchy(self, cls, parent=None):
+    def __add_node(self, cls):
         """
-        Adds a node to the graph if it doesn't exist, and recursively connects its children.
+        Adds a node to the graph if it doesn't exist.
         Args:
             cls (Thing): Class to add.
-            parent (str): Parent class ID.
         """
         rid = cls.name
-
         if rid not in self.graph:
             # Extract attributes
             attributes = self.ontology_manager.extract_data(cls, list(_properties_label_map.keys()))
             # Add node to the graph
             self.graph.add_node(rid, **attributes)
 
-        #if parent:
-        #    self.graph.add_edge(parent, rid, relation="subclass_of")
+    def __add_node_with_hierarchy(self, cls, parent=None, operation=ClassesOperations.CHECK_KEY, keyword=None):
+        """
+        Adds a node to the graph if it doesn't exist, and recursively connects its children.
+        Args:
+            cls (Thing): Class to add.
+            parent (str): Parent class ID.
+        """
+        relevant_subclasses = []
+        rid = cls.name
+        name = self.get_property(cls, _prefLabel)
+        is_relevant = False
+        subclasses = cls.subclasses()
 
-        # Scan for subclasses recursively
-        for subclass in cls.subclasses():
-            if self.is_relevant_entity(subclass):
-                self.__add_node_with_hierarchy(subclass, rid)
-                self.graph.add_edge(rid, subclass.name, relation="parent_of")
-                # Add relationships
-                self.__add_edge_from_attributes(cls)
+        # print(f"-For {name.lower()} ")
+        if operation == ClassesOperations.CHECK_LEMMA:
+            is_relevant = self.is_relevant_entity(cls, parent, check_definition = False)
+            relevant_subclasses = subclasses
+
+        elif operation == ClassesOperations.CHECK_DEFINITION:
+            is_relevant = self.is_relevant_entity(cls, parent, check_definition = True)
+            relevant_subclasses = subclasses
+
+        elif operation == ClassesOperations.CHECK_KEY:
+            values = self.class_filter.get(name.lower(), None)
+            # print("- Check-Key")
+            # print(f"Before: -Op: {operation.name}; - is_relevant: {is_relevant}; -Subcls: {subclasses};")
+            if not values:
+                return
+            elif isinstance(values, Enum):
+                if values == ClassesOperations.SKIP:
+                    return
+                operation = values
+                relevant_subclasses = cls.subclasses()
+            else:
+                operation = ClassesOperations.CHECK_VALUES
+                relevant_subclasses = [sub for sub in cls.subclasses()
+                                       if self.get_property(sub, _prefLabel).lower() in values]
+
+            is_relevant = True
+
+        elif operation == ClassesOperations.KEEP_ALL:
+            is_relevant = True
+            relevant_subclasses = subclasses
+
+        elif operation == ClassesOperations.CHECK_VALUES:
+            values = self.class_filter.get(keyword)
+            if isinstance(values, list):
+                enum_values = [value for value in values if isinstance(value, Enum)]
+                values = [value for value in values if not isinstance(value, Enum)]
+                is_relevant = any(name.lower() == value.lower() for value in values)
+                relevant_subclasses = [sub for sub in cls.subclasses() if self.get_property(sub, _prefLabel).lower() in values]
+                operation = ClassesOperations.KEEP_ALL
+
+                for enum_value in enum_values:
+                    if enum_value == ClassesOperations.CHECK_KEY:
+                        children_in_key = [sub for sub in subclasses if sub in self.class_filter.keys()]
+                        relevant_subclasses.extend(children_in_key)
+                    elif enum_value == ClassesOperations.CHECK_LEMMA:
+                        children_in_lemma = [sub for sub in subclasses if self.is_relevant_entity(sub, name)]
+                        relevant_subclasses.extend(children_in_lemma)
+
+            elif isinstance(values, Enum):
+                operation = values or ClassesOperations.SKIP
+                is_relevant = True
+
+                if values == ClassesOperations.CHECK_KEY:
+                    children_in_key = [sub for sub in subclasses if sub in self.class_filter.keys()]
+                    relevant_subclasses = children_in_key
+
+                elif values == ClassesOperations.CHECK_LEMMA:
+                    children_in_lemma = [sub for sub in subclasses if self.is_relevant_entity(sub, name)]
+                    relevant_subclasses = children_in_lemma
+
+        elif operation == ClassesOperations.SKIP:
+            return
+
+        # print(f" After: -Op: {operation.name}; - is_relevant: {is_relevant}; -Subcls: {subclasses};\n")
+
+        if is_relevant:
+            # Add node if it doesn't exist
+            self.__add_node(cls)
+            # Add relationships
+            self.__add_edge_from_attributes(cls)
+
+
+            # Scan for subclasses recursively
+            for sbc in relevant_subclasses:
+                if isinstance(sbc, Enum):
+                    operation = ClassesOperations.CHECK_KEY
+                self.__add_node_with_hierarchy(sbc, parent=rid, operation=operation, keyword=name.lower())
+
+        if parent:
+            self.graph.add_edge(parent, rid, relation="parent_of")
 
         # Add Parent to Children Edges
         #self.__add_edge_from_attributes(cls)
@@ -271,10 +373,11 @@ class RadLexGraphBuilder:
         print("✅ RadLex entity trovato! Scansionando sottoclassi...")
         self.graph.add_node(radlex_entity.name, label=self.get_property(radlex_entity, _prefLabel), type="Root")
         # Starts from RadLex entity and scans subclasses
+        print("Radlex Entity Children:")
         for cls in radlex_entity.subclasses():
-            if self.is_relevant_entity(cls):
-                self.__add_node_with_hierarchy(cls)
-                self.graph.add_edge(radlex_entity.name, cls.name, relation="parent_of")
+            print(f"- {cls.name}, {self.get_property(cls, _prefLabel)}")
+            self.__add_node_with_hierarchy(cls, operation=ClassesOperations.CHECK_KEY, parent=radlex_entity.name)
+            #self.graph.add_edge(radlex_entity.name, cls.name, relation="parent_of")
 
         print(f"✅ Nodi trovati: {self.graph.number_of_nodes()}, "
               f"Archi trovati: {self.graph.number_of_edges()}")
