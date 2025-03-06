@@ -1,5 +1,6 @@
 import pandas as pd
 import networkx as nx
+
 import tokenizer as tk
 from enum import Enum
 import json
@@ -216,12 +217,12 @@ class RadLexGraphBuilder:
         # elif cls.subclasses() is None or not list(cls.subclasses()):
         else:
             pref_label = tk.tokenize_and_stem_list(self.get_property(cls, _prefLabel))
-            return any(cat in pref_label for cat in self.ontology_manager.relevant_list) or (
-                check_definition and any(cat in tk.tokenize_and_stem_list(self.get_property(cls, _definition))
+            if any(cat in pref_label for cat in self.ontology_manager.relevant_list):
+                return True
+            elif check_definition and self.get_property(cls, _definition) is not None:
+                return check_definition and any(cat in tk.tokenize_and_stem_list(self.get_property(cls, _definition))
                                                             for cat in self.ontology_manager.relevant_list)
-            )
-
-        # return True
+        return False
 
     def __add_edge_from_attributes(self, source):
         """
@@ -265,10 +266,21 @@ class RadLexGraphBuilder:
 
     def __add_node_with_hierarchy(self, cls, parent=None, operation=ClassesOperations.CHECK_KEY, keyword=None):
         """
-        Adds a node to the graph if it doesn't exist, and recursively connects its children.
-        Args:
-            cls (Thing): Class to add.
-            parent (str): Parent class ID.
+            Adds a node to the graph if it doesn't exist, and recursively connects its children.
+
+            Args:
+                cls (Thing): Class to add.
+                parent (str): Parent class ID.
+                operation (ClassesOperations): Operation to determine how to handle the class and its subclasses.
+                keyword (str): Keyword to filter subclasses.
+
+            Operations:
+                - CHECK_KEY: Check if the class is in the filter keys.
+                - CHECK_LEMMA: Check if the class is in the tokenized and stemmed list.
+                - CHECK_DEFINITION: Check if class label or definition contains at least one keyword in tokenized and stemmed list.
+                - SKIP: Skip the class.
+                - KEEP_ALL: Keep all classes.
+                - CHECK_VALUES: Check if class label is in filter values.
         """
         relevant_subclasses = []
         rid = cls.name
@@ -451,8 +463,6 @@ class RadLexGraphBuilder:
 
         return self.graph
 
-    import networkx as nx
-
     def count_subgraph_sizes(self, parent_relation="parent_of"):
         """
         Prints the number of nodes in each subgraph rooted at the first-level children of the given root node,
@@ -505,3 +515,89 @@ class RadLexGraphBuilder:
         self.graph = nx.node_link_graph(graph_data)
 
 
+
+
+    # ---------------------------------- CREATE GRAPH FROM JSON STRUCTURE ----------------------------------
+
+    def create_graph_from_json(self, json_data, root_label="Root"):
+        """
+        Creates a directed graph (DiGraph) from a nested JSON ontology structure.
+
+        Args:
+            json_data (dict): JSON structure defining the hierarchical categories.
+            root_label (str): The root node label.
+        Returns:
+            nx.DiGraph: Directed graph representing the ontology structure.
+        """
+        self.graph = nx.DiGraph()
+
+        def add_nodes_recursively(clss, node_dict, parent, value = None):
+            """
+                Recursive function to add nodes and edges based on JSON structure.
+                Args:
+                    clss (ThingClass): Node in ontology to be checked and eventually added
+                    node_dict (dict): Dictionary representing the current node and its children.
+                    parent (ThingClass): Parent of the cls node
+                    value (str): value inherited or obtained from json node_dict:
+                        - "all": add all subclasses of the category
+                        - "search_definition": find subclasses using the provided search function
+                        - dict: Recur deeper into hierarchy
+                        - None: Default behavior, check if the class is in the filter keys
+            """
+            label_low = self.get_property(clss, _prefLabel).lower()
+            parent_label = self.get_property(parent, _prefLabel)
+
+            # Check if label is in json items
+            if not value:
+                normalized_dict = {key.lower(): val for key, val in node_dict.items()}  # Normalize keys
+                value = normalized_dict.get(label_low, None)
+
+            # If value is still None, skip the class
+            if not value:
+                return
+
+            # Handling different inclusion rules
+            # If value is all, add all subclasses of the category recursively
+            # If value is search_definition, check if the class is relevant: if it is, add it and check subclasses
+            elif ( value == "all" or
+                  (value == "search_definition" and self.is_relevant_entity(clss, parent_label, check_definition=True)) ):
+                # Add the class itself
+                self.__add_node(clss)
+
+                # Add relation to parent
+                self.graph.add_edge(parent.name, clss.name, relation="parent_of")
+                self.__add_edge_from_attributes(clss)
+
+                # Add all subclasses of the category
+                for subclass in clss.subclasses():
+                    add_nodes_recursively(subclass, node_dict, clss, value)
+
+            # If value is a dictionary, recur deeper into hierarchy
+            elif isinstance(value, dict):
+                # Add the class itself
+                self.__add_node(clss)
+
+                # Add relation to parent
+                self.graph.add_edge(parent.name, clss.name, relation="parent_of")
+                self.__add_edge_from_attributes(clss)
+
+                # Recur deeper into hierarchy if subclss is a key in the dictionary
+                for subclass in clss.subclasses():
+                    sub_label_low = self.get_property(subclass, _prefLabel).lower()
+                    if sub_label_low in value.keys():
+                        add_nodes_recursively(subclass, value, clss, value[sub_label_low])
+
+        # Start building from the root
+        radlex_entity = self.onto.search_one(iri="*RID1")
+        if not radlex_entity:
+            print("❌ Errore: 'RadLex entity' non trovato.")
+            return
+
+        print("Radlex Entity found. Creating graph...")
+        self.graph.add_node(radlex_entity.name, label=self.get_property(radlex_entity, _prefLabel), type=root_label)
+
+        # Start adding nodes recursively
+        for cls in radlex_entity.subclasses():
+            add_nodes_recursively(cls, json_data, radlex_entity)
+
+        return self.graph
