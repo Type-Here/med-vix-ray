@@ -406,3 +406,89 @@ class RadLexGraphBuilder:
         # GraphML
         nx.write_graphml(self.graph, graphml_path)
         print(f"✅ Grafo salvato in GraphML: {graphml_path}")
+
+    def prune_graph(self, valid_labels = None):
+        """
+        Prunes the directed graph by removing leaf nodes that:
+        1. Do not have a label.
+        2. Have a label not present in the valid_labels (already tokenized).
+        3. If a node becomes a leaf and is not valid, remove it iteratively up to the first common ancestor.
+
+        Args:
+            valid_labels (list): Set of valid labels. **Attention**: If None, will be used self.relevant_list.
+
+        Returns:
+            nx.DiGraph: Pruned graph.
+        """
+
+        if valid_labels is None:
+            valid_labels = self.ontology_manager.relevant_list
+
+        def is_valid(node):
+            """Check if the node is valid based on its label."""
+            label = self.graph.nodes[node].get("label", "")
+            tokenized_label = tk.tokenize_and_stem_list(label)
+            return bool(label) and any(token in tokenized_label for token in valid_labels)
+
+        removed_nodes = set()
+        while True:
+            # Identify leaf nodes (nodes with no outgoing edges)
+            leaves = {node for node in self.graph.nodes if self.graph.out_degree(node) == 0}
+
+            # Find leaves to remove
+            to_remove = {leaf for leaf in leaves if not is_valid(leaf)}
+
+            # If no more nodes to remove, stop
+            if not to_remove:
+                break
+
+            # Remove nodes
+            self.graph.remove_nodes_from(to_remove)
+            removed_nodes.update(to_remove)
+
+        print(f"✅ Pruning complete! Removed {len(removed_nodes)} nodes.")
+        print(f"✅ Remaining nodes: {self.graph.number_of_nodes()}")
+
+        return self.graph
+
+    import networkx as nx
+
+    def count_subgraph_sizes(self, parent_relation="parent_of"):
+        """
+        Prints the number of nodes in each subgraph rooted at the first-level children of the given root node,
+        following the specified parent-child relationship.
+
+        Args:
+            parent_relation (str): The relationship label to follow for parent-child connections.
+
+        Returns:
+            dict: A dictionary with first-level child nodes as keys and their subgraph size as values.
+        """
+        root = self.root_label
+        graph = self.graph
+
+        if root not in graph:
+            print(f"❌ Root node '{root}' not found in the graph!")
+            return {}
+
+        # Find first-level children of the root based on the "parent_of" relationship
+        first_level_children = [
+            child for child in graph.successors(root) if graph.edges[root, child].get("relation") == parent_relation
+        ]
+
+        subgraph_sizes = {}
+
+        print(f"📌 Root node: {root}")
+        print(f"📌 First-level children: {first_level_children}\n")
+
+        for child in first_level_children:
+            # Get all descendants of this child (nodes reachable from it)
+            descendants = nx.descendants(graph, child)
+            subgraph_size = len(descendants) + 1  # Include the child itself
+
+            info_node = graph.nodes[child]
+
+            subgraph_sizes[child] = subgraph_size
+            print(f"🔹 Subgraph rooted at '{child}' - {info_node['label']} → {subgraph_size} nodes")
+
+        return subgraph_sizes
