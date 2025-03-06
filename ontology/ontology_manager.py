@@ -492,3 +492,16 @@ class RadLexGraphBuilder:
             print(f"🔹 Subgraph rooted at '{child}' - {info_node['label']} → {subgraph_size} nodes")
 
         return subgraph_sizes
+
+
+    def load_graph(self, path="radlex_graph.json"):
+        """
+        Load the graph from a JSON file.
+        Args:
+            path (str): Path to the JSON file.
+        """
+        with open(path, "r", encoding="utf-8") as f:
+            graph_data = json.load(f)
+        self.graph = nx.node_link_graph(graph_data)
+
+
