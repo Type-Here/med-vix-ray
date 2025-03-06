@@ -1,0 +1,65 @@
+{
+  "anatomical entity": {
+    "immaterial anatomical entity": "all",
+    "material anatomical entity": {
+      "anatomical structure": {
+        "anatomic sub-part": "all",
+        "organ": {
+          "solid organ": {
+            "parenchymatous organ": {
+              "lobular organ": "lung"
+            }
+          }
+        }
+      },
+      "normal anatomy": "all"
+    }
+  },
+  "clinical finding": {
+    "symptom": "all",
+    "pathophysiologic finding": {
+      "death": "all",
+      "injury": {
+        "fracture": "search_definition",
+        "wound": "all"
+      },
+      "mechanical disorder": "search_definition",
+      "multisystem disorder": "all",
+      "neoplastic disease": {
+        "malignant neoplastic disease": "search_definition",
+        "paraneoplastic syndrome": "all"
+      },
+      "pathophysiologic production": "all",
+      "proliferation": {
+        "focal proliferation": "all",
+        "neoplasm": "search_definition"
+      }
+    }
+  },
+  "imaging observation": {
+    "assessment": {
+      "lung assessment": "all"
+    },
+    "tnm tumor stage assessment": {
+      "asymmetry": "all"
+    },
+    "density-related entity": "all",
+    "imaging sign": "search_definition",
+    "lesion": "all",
+    "lung imaging observation": "all",
+    "visible anatomic entity": "all"
+  },
+  "object": "all",
+  "procedure": {
+    "access procedure": "all",
+    "opacity": "all"
+  },
+  "radlex descriptor": {
+    "aggressiveness descriptor": "all",
+    "anatomically-related descriptor": "search_definition",
+    "certainty descriptor": "all",
+    "imaging observation descriptor": "all",
+    "size descriptor": "all"
+  },
+  "report component": "all"
+}
