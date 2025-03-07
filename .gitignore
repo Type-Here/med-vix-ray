@@ -176,3 +176,4 @@ cython_debug/
 
 # MANUAL
 ontology/radlex_graph.*
+mimic/*
