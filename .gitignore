@@ -173,7 +173,9 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-
 # MANUAL
 ontology/radlex_graph.*
 mimic/*
+
+# Removed RadLex ontology files - Dimension is over GitHub reccommendations
+ontology/data/RadLex.owl
