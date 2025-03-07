@@ -6,3 +6,6 @@ RADLEX_GRAPH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ont
 RADLEX_GRAPH = os.path.join(RADLEX_GRAPH_DIR, 'radlex_graph.json')
 
 FILTER_RADLEX_JSON = os.path.join(RADLEX_DATA_DIR, 'filter.json')
+
+# Report data
+MIMIC_REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mimic')
