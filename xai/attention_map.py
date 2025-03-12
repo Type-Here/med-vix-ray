@@ -18,6 +18,9 @@ class AttentionMap:
         if model is None:
             raise ValueError("Model must be provided.")
 
+        self.map = None
+        self.mask = None
+
         self.type = xai_type
         if xai_type not in ["cdam", "gradcam"]:
             raise ValueError("Invalid type. Choose 'cdam' or 'gradcam'.")
@@ -28,15 +31,46 @@ class AttentionMap:
             print("✅ Using Grad-CAM for attention map generation.")
             self.__set_grad_cam(model)
 
-    # ============== GRAD-CAM =================
+    # -------- SETTER: CHANE XAI TYPE --------
+    def set_generation_method(self, method, model):
+        """
+        Setter: Change the method for generating attention/heat-maps.
+        Args:
+            method: Method to use for generating maps. Choose "cdam" or "gradcam".
+            model: Swin V2 model.
+        Raises:
+            ValueError: If the method is not recognized.
+        """
+        if method == "cdam":
+            self.__set_cdam(model)
+        elif method == "gradcam":
+            self.__set_grad_cam(model)
+        else:
+            raise ValueError("Invalid method. Choose 'cdam' or 'gradcam'.")
+
+    # -------- INTERNAL SETTERS --------
 
     def __set_grad_cam(self, model):
         """
-        Set the Grad-CAM model.
+            Set the Grad-CAM model.
         """
-        self.grad_cam = LayerGradCam(model, model.swin.layers[-1].blocks[-1].attn.proj)
+        # Get the target layer for Grad-CAM
+        target_layer = model.swin.layers[-1].blocks[-1].attn
+
+        #self.grad_cam = LayerGradCam(model, model.swin.layers[-1].blocks[-1].attn.proj)
+        # Create a LayerGradCam object
+        self.grad_cam = LayerGradCam(model, target_layer.proj)
+
         self.generate_attention_map = self.__generate_attention_map_grad_cam
-        self.analyze_intensity = self.__analyze_intensity_grad_cam
+
+    def __set_cdam(self, model):
+        """
+            Set the CDAM model.
+        """
+        self.cdam = LayerAttribution(model, model.swin.layers[-1].blocks[-1].attn.proj)
+        self.generate_attention_map = self.__extract_attention_cdam
+
+    # ============== GRAD-CAM =================
 
     def __generate_attention_map_grad_cam(self, model, image_tensor):
         """
@@ -47,42 +81,25 @@ class AttentionMap:
         Returns:
             Heatmap of attention areas.
         """
+        # Ensure the model is in evaluation mode
         model.eval()
 
         # Calculate the Grad-CAM attribution
-        attribution = self.grad_cam.attribute(image_tensor, target=0)  # target=0 for the first class
+        attribution = self.grad_cam.attribute(image_tensor, target=0)
 
         # Convert to numpy and normalize (heatmap)
         heatmap = attribution.squeeze().cpu().detach().numpy()
-        heatmap = cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX)
-        return heatmap
 
-    def __analyze_intensity_grad_cam(self, image, heatmap):
-        """
-        Analyze pixel intensity within the attention map region.
-        Args:
-            image: Grayscale X-ray image.
-            heatmap: Attention heatmap.
-        Returns:
-            Mean and variance of pixel intensity.
-        """
-        # Normalize the heatmap to [0, 1]
-        heatmap = heatmap / np.max(heatmap)
+        # Cast to float32 for compatibility with OpenCV
+        # Uncomment if needed
+        # heatmap = heatmap.astype(np.float32)
 
-        # Create a mask by selecting pixels with high attention
-        self.mask = heatmap > ATTENTION_MAP_THRESHOLD  # Threshold
+        heatmap_norm = np.zeros_like(heatmap)  # Create an empty array for normalization with same shape
+        res_heatmap = cv2.normalize(heatmap_norm, heatmap, 0.0, 255.0, cv2.NORM_MINMAX) # Normalize in place
+        self.map = res_heatmap
 
-        # Extract the intensity values from the original image
-        intensities = image[self.mask]
+        return heatmap_norm
 
-        # Calculate mean and variance of the intensities
-        mean_intensity = np.mean(intensities)
-        variance_intensity = np.var(intensities)
-
-        # Inference of approximal shape
-        # TODO: Implement a more sophisticated shape inference
-
-        return mean_intensity, variance_intensity
 
     def compare_with_clinical_values(self, mean_intensity, variance_intensity, pathology):
         """
@@ -110,13 +127,6 @@ class AttentionMap:
             return "⚠️ No clinical data available for this pathology"
 
     # ========== CDAM =============
-    def __set_cdam(self, model):
-        """
-        Set the CDAM model.
-        """
-        self.cdam = LayerAttribution(model, model.swin.layers[-1].blocks[-1].attn.proj)
-        self.generate_attention_map = self.__extract_attention_cdam
-        self.analyze_intensity = self.__analyze_intensity_grad_cam
 
     def __extract_attention_cdam(self, model, image_tensor, layer_num=-1):
         """
@@ -132,44 +142,97 @@ class AttentionMap:
         """
         model.eval()
 
-        # Prendiamo l'ultimo blocco di Swin
-        transformer_layer = model.swin.layers[layer_num].blocks[-1].attn.attn_probs
+        # Get the attention weights from the last transformer layer
+        # transformer_layer = model.swin.layers[layer_num].blocks[-1].attn.attn_probs
+        transformer_layer = model.swin.layers[layer_num].blocks[-1].attn.get_attn()
 
-        # Forward pass per ottenere l'attenzione
+        # Forward pass to get the attention weights
         with torch.no_grad():
-            _ = model(image_tensor)  # Inneschiamo il passaggio in avanti per ottenere le attenzioni
+            # Here we need to pass the image tensor through the model to get the attention weights
+            _ = model(image_tensor)
 
         attention_map = transformer_layer.cpu().detach().numpy()
 
-        # Sommiamo su tutte le teste di attenzione
+        # Adds up all attention heads (mean)
         attention_map = np.mean(attention_map, axis=0)
 
-        # Ridimensioniamo la heatmap alla dimensione dell'immagine
+        # Resize to 256x256 (adapt to input size)
         attention_map = cv2.resize(attention_map, (256, 256))
 
-        # Normalizziamo la heatmap tra 0 e 255
-        attention_map = cv2.normalize(attention_map, None, 0, 255, cv2.NORM_MINMAX)
+        # Cast to float32 for compatibility with OpenCV
+        # Uncomment if needed
+        # heatmap = heatmap.astype(np.float32)
+
+        # Normalize the attention map to [0, 255]
+        attmap_norm = np.zeros_like(attention_map)  # Create an empty array for normalization with same shape
+        res_map = cv2.normalize(attention_map, attmap_norm, 0, 255, cv2.NORM_MINMAX) # Normalize in place
+        self.map = res_map
 
         return attention_map
 
+    # ========= ANALYSIS =============
+
+    def analyze_intensity(self, image, is_3d=False):
+        """
+        Analyze pixel intensity within the attention map region.
+        Args:
+            image: Grayscale X-ray image.
+            is_3d: If True, squash the heatmap to 2D using mean. Default is False.
+        Returns:
+            Mean and variance of pixel intensity.
+        Raises:
+            ValueError: If no attention map is generated yet.
+        """
+        if self.map is None:
+            raise ValueError("No attention map generated yet.")
+
+        if is_3d:
+            heatmap = np.mean(self.map, axis=0) / np.max(np.mean(self.map, axis=0))
+        else:
+            # Normalize the heatmap to [0, 1]
+            heatmap = self.map / np.max(self.map)
+
+        # Create a mask by selecting pixels with high attention
+        self.mask = heatmap > ATTENTION_MAP_THRESHOLD  # Threshold
+
+        # Extract the intensity values from the original image
+        intensities = image[self.mask]
+
+        # Calculate mean and variance of the intensities
+        mean_intensity = np.mean(intensities)
+        variance_intensity = np.var(intensities)
+
+        # Inference of approximal shape
+        # TODO: Implement a more sophisticated shape inference
+
+        return mean_intensity, variance_intensity
+
 
     # ======== VISUALIZATION ============
-    def visualize_attention(self, image_tensor, attention_map):
+
+    def visualize_attention(self, image_tensor):
         """
         Visualize the attention map on the original image.
         Args:
             image_tensor: Pre-processed image tensor (1, 1, 256, 256).
-            attention_map: Attention heatmap.
+        Raises:
+            ValueError: If no attention map is generated yet.
         """
+        if self.map is None:
+            raise ValueError("No attention map generated yet.")
+
         # Convert the image tensor to numpy
         image = image_tensor.squeeze().cpu().detach().numpy()
         image = np.transpose(image, (1, 2, 0))  # Change to HWC format
 
         # Resize the attention map to match the original image size
-        attention_map = cv2.resize(attention_map, (image.shape[1], image.shape[0]))
+        attention_map = cv2.resize(self.map, (image.shape[1], image.shape[0]))
 
+        # Normalize the attention map to [0,1] if the image is also in this range
+        if np.max(image) <= 1.0:
+            attention_map = attention_map / 255.0
         # Normalize the attention map
-        attention_map = cv2.normalize(attention_map, None, 0, 255, cv2.NORM_MINMAX)
+        # attention_map = cv2.normalize(attention_map, None, 0, 255, cv2.NORM_MINMAX)
 
         # Overlay the attention map on the original image
         overlay = cv2.addWeighted(image.astype(np.uint8), 0.5, attention_map.astype(np.uint8), 0.5, 0)
@@ -178,17 +241,36 @@ class AttentionMap:
         plt.axis('off')
         plt.show()
 
-    def visualize_attention_map_only(self, attention_map):
-        plt.imshow(attention_map, cmap='jet')
+    def visualize_attention_map_only(self):
+        """
+        Visualize the attention map only. Prefer self.visualize_attention() for better results.
+        Raises:
+            ValueError: If no attention map is generated yet.
+        """
+        if self.map is None:
+            raise ValueError("No attention map generated yet.")
+
+        plt.imshow(self.map, cmap='jet')
         plt.colorbar()
         plt.show()
 
     # ========== ADJUSTMENT =============
 
-    def adjust_attention_map(self, heatmap, mean_intensity, pathology):
+    def adjust_attention_map(self, mean_intensity, pathology):
         """
         Adjust the attention map if it doesn't match expected clinical HU values.
+        Args:
+            mean_intensity: Mean intensity of the attention map region.
+            pathology: Pathology type.
+        Raises:
+            ValueError: If no attention map is generated yet.
         """
-        if self.compare_with_clinical_values(mean_intensity, np.var(heatmap), pathology) == "❌ Potential inconsistency":
-            heatmap = heatmap * 0.7  # Reduce the intensity of the attention map
-        return heatmap
+        if self.map is None:
+            raise ValueError("No attention map generated yet.")
+
+        # TODO: Implement a more sophisticated adjustment
+        if self.compare_with_clinical_values(mean_intensity, np.var(self.map),
+                                             pathology) == "❌ Potential inconsistency":
+            # Reduce the attention map values only in the region of interest
+            self.map[self.map > ATTENTION_MAP_THRESHOLD] *= 0.7
+        return self.map
