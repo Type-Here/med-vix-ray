@@ -1,9 +1,10 @@
-import scispacy
+# import scispacy
 import spacy
 import os
 import concurrent.futures
 from collections import Counter
-from settings import MIMIC_REPORT_DIR
+
+from settings import MIMIC_REPORT_DIR, NUM_WORKERS, RADLEX_DATA_DIR
 # MODEL = "https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_md-0.5.4.tar.gz"
 
 # Load the SciSpacy model
@@ -55,7 +56,7 @@ def __map_entities(entities):
     return dict(Counter(entities))  # Count occurrences of each entity, improving efficiency
 
 
-def improve_graph_from_reports(mimic_report_folder, threshold=0, num_workers=8):
+def get_entities_from_reports(mimic_report_folder, threshold=0, num_workers=8):
     """
     Improve the graph using MIMIC reports.
     :param mimic_report_folder: Path to the folder containing MIMIC reports.
@@ -69,11 +70,11 @@ def improve_graph_from_reports(mimic_report_folder, threshold=0, num_workers=8):
     print("🧠 Avvio analisi NLP con SciSpacy in parallelo...")
     all_entities = []
 
-    # Usa ProcessPoolExecutor per parallelizzare l'estrazione delle entità
+    # Use ProcessPoolExecutor to parallelize entity extraction
     with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
         results = executor.map(__extract_medical_entities, report_texts)
 
-    # Unisce i risultati dei processi
+    # Collect all entities from the results
     for entities in results:
         all_entities.extend(entities)
 
@@ -95,8 +96,23 @@ def improve_graph_from_reports(mimic_report_folder, threshold=0, num_workers=8):
     return entity_map
 
 
+def save_entity_map_to_file(entity_map, output_file):
+    """
+    Save the entity map to a JSON file.
+    :param entity_map: Dictionary with entity counts.
+    :param output_file: Path to the output JSON file.
+    """
+    import json
+    with open(output_file, 'w') as f:
+        json.dump(entity_map, f, indent=4)
+
 # ===== EXECUTION =====
 if __name__ == "__main__":
-    print("🚀 Avvio miglioramento del grafo dai report MIMIC...")
-    rel_entities = improve_graph_from_reports(MIMIC_REPORT_DIR, num_workers=6)  # Usa 6 processi paralleli
+    print("🚀 Avvio recupero entità da report MIMIC...")
+    rel_entities = get_entities_from_reports(MIMIC_REPORT_DIR, num_workers=NUM_WORKERS)  # Use NUM_WORKERS from settings
+
+    # Save the entity map to a JSON file
+    save_output = os.path.join(RADLEX_DATA_DIR, "entity_map.json")
+    save_entity_map_to_file(rel_entities, save_output)
+
     print("✅ Completato!")
