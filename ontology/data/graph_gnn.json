@@ -1,0 +1,1379 @@
+{
+    "directed": false,
+    "multigraph": false,
+    "graph": {},
+    "nodes": [
+      {
+         "id": "0",
+         "label": "Atelectasis",
+         "description": "Atelectasis is a condition in which one or more areas of the lung collapse or do not inflate properly.",
+         "type": "disease"
+      },
+      {
+         "id": "1",
+         "label": "Cardiomegaly",
+         "description": "Cardiomegaly is an enlargement of the heart that can be caused by various conditions.",
+         "type": "disease"
+      },
+      {
+        "id": "2",
+        "label": "Consolidation",
+        "description": "Consolidation refers to the filling of the lung's air spaces with fluid, cells, or other material.",
+        "type": "disease"
+      },
+      {
+        "id": "3",
+        "label": "Edema",
+        "description": "Edema is the accumulation of fluid in the lungs, which can cause breathing difficulties.",
+        "type": "disease"
+      },
+      {
+        "id": "4",
+        "label": "Enlarged Cardiomediastinum",
+        "description": "Enlarged cardiomediastinum refers to an enlargement of the area in the chest that contains the heart and major blood vessels.",
+        "type": "disease"
+      },
+      {
+        "id": "5",
+        "label": "Fracture",
+        "description": "A fracture is a break in the continuity of the bone.",
+        "type": "disease"
+      },
+      {
+        "id": "6",
+        "label": "Lung Lesion",
+        "description": "A lung lesion is an abnormal area of tissue in the lung that may indicate disease.",
+        "type": "disease"
+      },
+      {
+        "id": "7",
+        "label": "Lung Opacity",
+        "description": "Lung opacity refers to an area in the lung that appears denser than normal on an X-ray.",
+        "type": "disease"
+      },
+      {
+        "id": "8",
+        "label": "Pleural Effusion",
+        "description": "Pleural effusion is the accumulation of excess fluid in the pleural cavity surrounding the lungs.",
+        "type": "disease"
+      },
+      {
+        "id": "9",
+        "label": "Pneumonia",
+        "description": "Pneumonia is an infection that inflames the air sacs in one or both lungs.",
+        "type": "disease"
+      },
+      {
+        "id": "10",
+        "label": "Pneumothorax",
+        "description": "Pneumothorax is the presence of air in the pleural space, which can cause lung collapse.",
+        "type": "disease"
+      },
+      {
+        "id": "11",
+        "label": "Pleural Other",
+        "description": "Pleural other refers to various conditions affecting the pleura, the membrane surrounding the lungs.",
+        "type": "disease"
+      },
+      {
+        "id": "12",
+        "label": "Support Devices",
+        "description": "Support devices are medical equipment used to assist patients with breathing or other functions.",
+        "type": "disease"
+      },
+      {
+        "id": "13",
+        "label": "No Finding",
+        "description": "No finding indicates that no abnormalities were detected in the imaging study.",
+        "type": "disease"
+      },
+
+      {
+        "id": "20",
+        "label": "Opacity",
+        "description": "Opacity refers to an area that appears denser than normal on an X-ray.",
+        "synonyms": ["radiopacity", "radiodensity", "radiodense"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "21",
+        "label": "veil-like opacity",
+        "description": "Veil-like opacity refers to a pattern of opacity that resembles a veil, often indicating a specific type of lung condition.",
+        "synonyms": ["veil opacity"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "22",
+        "label": "luftsichel",
+        "description": "Crescent of air seen on the frontal radiograph,\nwhich represents the interface between the aorta and the hyperexpanded superior segment\nof the left lower lobe",
+        "synonyms": ["air crescent", "air crescent sign", "air-sickel", "air sickle", "air sichel"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "23",
+        "label": "reverse S sign of Golden",
+        "description": "The reverse S sign of Golden is a radiological sign seen in cases of right upper lobe atelectasis,characterized by a crescentic opacity in the right upper lobe and a concave border towards the hilum.",
+        "synonyms": ["reverse S sign", "Golden sign", "Golden"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "24",
+        "label": "juxtaphrenic peak sign",
+        "description": "The juxtaphrenic peak sign is a radiological sign seen in cases of right-sided pleural effusion, characterized by a triangular opacity at the right hemidiaphragm.",
+        "synonyms": ["juxtaphrenic peak", "juxtaphrenic peak sign", "peak sign"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "25",
+        "label": "lobe collapse",
+        "description": "Lobe collapse refers to the complete or partial collapse of a lobe of the lung.",
+        "synonyms": ["lobar collapse", "lobar atelectasis"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "26",
+        "label": "Air bronchograms",
+        "description": "Air bronchograms are a radiological sign seen in cases of pneumonia or pulmonary edema, characterized by the presence of air-filled bronchi surrounded by opacified lung tissue.",
+        "synonyms": ["air bronchogram", "air bronchogram sign"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "27",
+        "label": "Ground-glass opacity",
+        "description": "Ground-glass opacity is a radiological sign characterized by a hazy increase in lung opacity, which does not obscure the underlying vascular markings. This sign is specific of CT but some authors use it in X-ray.",
+        "synonyms": ["ground-glass opacity", "ground glass opacity", "ground glass", "dark bronchogram", "veil-like opacity"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "28",
+        "label": "Septal thickening",
+        "description": "Septal thickening is a radiological sign characterized by the thickening of the interlobular septa in the lungs, often seen in cases of pulmonary edema or interstitial lung disease.",
+        "synonyms": ["septal thickening", "interlobular septal thickening", "crazy paving"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "29",
+        "label": "Kerley B lines",
+        "description": "Kerley B lines are thin, horizontal lines seen on chest X-rays, often representing interstitial edema in the lungs or congestive heart failure. They are perpendicular to the pleural surface and extend out to it.",
+        "synonyms": ["kerley B lines", "b lines"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "30",
+        "label": "Kerley A lines",
+        "description": "Kerley A lines are thin, linear opacities seen on chest X-rays, often representing interstitial edema in the lungs or congestive heart failure. They are longer and less frequent than Kerley B lines and they are seen to cross normal vascular markings and extend radially from the hilum to the upper lobes.",
+        "synonyms": ["kerley A lines", "a lines"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "31",
+        "label": "flattening of the diaphragms",
+        "description": "Flattening of the diaphragms is a radiological sign characterized by the flattening or bulging of the diaphragm, often seen in cases of emphysema or chronic obstructive pulmonary disease (COPD).",
+        "synonyms": ["flattening of the diaphragm", "diaphragm flattening", "flattened diaphragm"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "32",
+        "label": "Emphysema",
+        "description": "Emphysema is a lung condition characterized by the destruction of the alveoli, leading to breathing difficulties.",
+        "synonyms": ["pulmonary emphysema", "lung emphysema"],
+        "type": "disease"
+      },
+      {
+       "id": "33",
+        "label": "Pleural thickening",
+        "description": "Pleural thickening is a radiological sign characterized by the thickening of the pleura, often seen in cases of pleural disease or fibrosis.",
+        "synonyms": ["pleural thickening", "pleural disease", "absestosis", "pleural opacity"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "34",
+        "label": "Central Density",
+        "description": "Central density refers to the density of the central part of the chest cavity, often used in radiological assessments.",
+        "synonyms": ["central density", "central opacity"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "35",
+        "label": "Tracheal Shift",
+        "description": "Tracheal shift refers to the displacement of the trachea from its normal midline position, often indicating underlying pathology.",
+        "synonyms": ["tracheal shift", "tracheal deviation", "tracheal displacement"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "36",
+        "label": "Gynecomastia",
+        "description": "Gynecomastia is the enlargement of breast tissue ",
+        "synonyms": ["gynecomastia", "breast enlargement"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "37",
+        "label": "Cardiac Silhouette",
+        "description": "Cardiac silhouette refers to the outline of the heart as seen on a chest X-ray.",
+        "synonyms": ["cardiac silhouette", "heart silhouette"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "38",
+        "label": "Calcification",
+        "description": "Calcification refers to the deposition of calcium salts in tissues, often seen in various conditions.",
+        "synonyms": ["calcification", "calcified lesion"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "39",
+        "label": "Displaced Bone",
+        "description": "Displaced bone refers to a fracture in which the bone ends are not aligned properly.",
+        "synonyms": ["displaced bone", "displaced fracture"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "40",
+        "label": "Bone Fragment",
+        "description": "Bone fragment refers to a piece of bone that has broken off from the main bone structure.",
+        "synonyms": ["bone fragment", "bone chip"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "41",
+        "label": "Bone Density",
+        "description": "Bone density refers to the amount of mineral matter per square centimeter of bones, often used in radiological assessments.",
+        "synonyms": ["bone density", "bone mass"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "42",
+        "label": "Bone Interruption",
+        "description": "Bone interruption refers to a break in the continuity of the bone, often seen in fractures.",
+        "synonyms": ["bone interruption", "bone break"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "43",
+        "label": "Nodular Opacity",
+        "description": "Nodular opacity refers to a small, rounded area of increased density on an X-ray, often indicating a nodule or mass.",
+        "synonyms": ["nodular opacity", "nodular lesion"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "44",
+        "label": "Cavitation",
+        "description": "Cavitation refers to the formation of a cavity or hollow space within a solid object, often seen in lung lesions.",
+        "synonyms": ["cavitation", "cavitary lesion"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "45",
+        "label": "Mass",
+        "description": "Pleural mass refers to a localized area of abnormal tissue in the pleura, the membrane surrounding the lungs.",
+        "synonyms": ["pleural mass", "pleural tumor"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "46",
+        "label": "Cloudy Opacity",
+        "description": "Cloudy opacity refers to a hazy or indistinct area of increased density on an X-ray, often indicating fluid or other material in the lung.",
+        "synonyms": ["cloudy opacity", "hazy opacity", "cloud-like opacity", "fluffy opacity"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "47",
+        "label": "Lobar Sign",
+        "description": "Lobar sign refers to a radiological sign indicating the presence of a lobar pneumonia or other lung pathology.",
+        "synonyms": ["lobar sign", "lobar pneumonia", "lobar opacity"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "48",
+        "label": "Radiotranslucent",
+        "description": "Radiotranslucent refers to an area that allows X-rays to pass through, appearing darker on the radiograph.",
+        "synonyms": ["radiotranslucent", "radiolucent", "radiotransparent", "radiolucency"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "49",
+        "label": "Pleural Line",
+        "description": "Pleural line refers to the interface between the pleura and the lung, often seen on ultrasound or CT scans.",
+        "synonyms": ["pleural line", "pleural interface"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "50",
+        "label": "Deep Sulcus Sign",
+        "description": "The deep sulcus sign is a radiological sign seen on supine chest X-rays, characterized by the presence of a deep costophrenic angle, often indicating a pneumothorax.",
+        "synonyms": ["deep sulcus sign", "deep costophrenic angle"]
+      },
+      {
+        "id": "51",
+        "label": "Pericardial Fat Sign",
+        "description": "The pericardial fat sign is a radiological sign seen on chest X-rays, characterized by the presence of  cardiac border has a lumpy contour, often indicating a pneumothorax,",
+        "synonyms": ["pericardial fat sign", "pericardial fat pad"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "52",
+        "label": "extraneous material",
+        "description": "Extraneous material refers to any foreign object or substance that is not part of the normal anatomy.",
+        "synonyms": ["extraneous material", "foreign body", "foreign object"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "53",
+        "label": "metallic foreign body",
+        "description": "Metallic foreign body refers to any metallic object that is not part of the normal anatomy and is present in the body.",
+        "synonyms": ["metallic foreign body", "metallic object", "metallic fragment"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "54",
+        "label": "drainage tube",
+        "description": "Drainage tube refers to a tube used to remove fluid or air from the body.",
+        "synonyms": ["drainage tube", "drain tube", "drain"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "55",
+        "label": "hematoma",
+        "description": "Hematoma refers to a localized collection of blood outside of blood vessels, often due to injury or trauma.",
+        "synonyms": ["hematoma", "blood clot", "blood collection"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "56",
+        "label": "fibrosis",
+        "description": "Fibrosis refers to the thickening and scarring of connective tissue, often due to injury or disease.",
+        "synonyms": ["fibrosis", "scar tissue", "fibrotic tissue", "cicatrix", "cicatricial tissue"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "57",
+        "label": "cardiac chamber enlargement",
+        "description": "Cardiac chamber enlargement refers to the enlargement of one or more chambers of the heart, often due to various conditions.",
+        "synonyms": ["cardiac chamber enlargement", "heart chamber enlargement", "enlargement of cardiac silhouette"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "58",
+        "label": "bronchectasis",
+        "description": "Bronchiectasis is a condition characterized by the abnormal and permanent dilation of the bronchi, often due to chronic infection or inflammation.",
+        "synonyms": ["bronchiectasis", "bronchial dilation"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      },
+      {
+        "id": "60",
+        "label": "Normal",
+        "description": "Normal refers to the absence of any abnormalities or disease.",
+        "synonyms": ["normal", "healthy"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null
+        }
+      }
+
+  ],
+  "links": [
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "21"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "22"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "23"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "24"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "25"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "21"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "22"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "23"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "24"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "25"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "0",
+      "target": "56"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "2",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "1",
+      "target": "57"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "1",
+      "target": "51"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "1",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "2",
+      "target": "26"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "2",
+      "target": "27"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "2",
+      "target": "28"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "3",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "3",
+      "target": "21"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "3",
+      "target": "26"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "3",
+      "target": "27"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "3",
+      "target": "28"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "3",
+      "target": "29"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "3",
+      "target": "30"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "1",
+      "target": "34"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "4",
+      "target": "34"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "4",
+      "target": "35"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "4",
+      "target": "36"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "4",
+      "target": "38"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "5",
+      "target": "38"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "5",
+      "target": "39"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "5",
+      "target": "40"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "5",
+      "target": "41"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "5",
+      "target": "42"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "5",
+      "target": "55"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "6",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "6",
+      "target": "21"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "6",
+      "target": "27"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "6",
+      "target": "28"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "6",
+      "target": "38"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "6",
+      "target": "43"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "6",
+      "target": "56"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "7",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "7",
+      "target": "21"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "7",
+      "target": "27"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "8",
+      "target": "25"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "8",
+      "target": "33"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "8",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "8",
+      "target": "28"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "21"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "26"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "27"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "28"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "31"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "32"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "44"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "43"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "46"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "47"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "56"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "9",
+      "target": "58"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "10",
+      "target": "48"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "10",
+      "target": "25"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "10",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "10",
+      "target": "49"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "10",
+      "target": "50"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "10",
+      "target": "51"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "12",
+      "target": "52"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "12",
+      "target": "53"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "12",
+      "target": "54"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "12",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "11",
+      "target": "55"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "11",
+      "target": "33"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "11",
+      "target": "28"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "11",
+      "target": "20"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "11",
+      "target": "21"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "11",
+      "target": "32"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "11",
+      "target": "56"
+    },
+    {
+      "relation": "finding",
+      "weight": 1,
+      "source": "13",
+      "target": "60"
+    },
+
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "0",
+      "target": "1"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "0",
+      "target": "8"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "0",
+      "target": "9"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "0",
+      "target": "10"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "0",
+      "target": "6"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "1",
+      "target": "4"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "1",
+      "target": "3"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "1",
+      "target": "8"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "2",
+      "target": "7"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "2",
+      "target": "6"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "3",
+      "target": "9"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "3",
+      "target": "8"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "3",
+      "target": "4"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "3",
+      "target": "5"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "5",
+      "target": "10"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "6",
+      "target": "7"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "6",
+      "target": "8"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "6",
+      "target": "9"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "6",
+      "target": "10"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "6",
+      "target": "12"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "8",
+      "target": "9"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "9",
+      "target": "11"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "10",
+      "target": "11"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "1",
+      "target": "12"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "10",
+      "target": "12"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "8",
+      "target": "12"
+    },
+    {
+      "relation": "correlation",
+      "weight": 1,
+      "source": "8",
+      "target": "11"
+    }
+  ]
+   
+}
+
