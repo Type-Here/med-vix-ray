@@ -175,6 +175,7 @@ cython_debug/
 
 # MANUAL
 ontology/radlex_graph.*
+ontology/scispacy/__*
 mimic/*
 
 # Removed RadLex ontology files - Dimension is over GitHub reccommendations
