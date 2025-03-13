@@ -16,6 +16,7 @@ from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
+
 def vit_loader():
     """
     Vision Transformer (ViT) model for feature extraction.

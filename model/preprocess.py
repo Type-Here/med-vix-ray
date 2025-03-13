@@ -33,6 +33,7 @@ def preprocess_image(image_path):
 
 # =============================================
 
+
 if __name__ == "__main__":
     # Example usage
     img_path = "/path/to/sample_image.jpg"  # Replace with your image path
