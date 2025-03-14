@@ -10,7 +10,7 @@ from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
 
 # Dataset path
-from settings import DATASET_PATH
+from settings import DATASET_PATH, MIMIC_LABELS
 from settings import NUM_EPOCHS, BATCH_SIZE, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
 from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
 
@@ -61,14 +61,14 @@ class SwinMIMICClassifier(nn.Module):
         :argument nn.Module: Inherits from PyTorch's nn.Module class.
     """
 
-    def __init__(self, num_classes=14):  # 14 patologie in MIMIC-CXR
+    def __init__(self, num_classes=len(MIMIC_LABELS)):  # 14 patologie in MIMIC-CXR
         """
             Initializes the SwinMIMICClassifier src.
             This src uses the Swin V2 architecture for feature extraction and a custom classifier head for multi-label classification.
             :param num_classes: Number of output classes (default: 14 for MIMIC-CXR).
         """
         super(SwinMIMICClassifier, self).__init__()
-        self.swin_model = self.__swin_loader()
+        self.swin_model = self.__swin_loader(num_classes=num_classes)
 
         # New classifier head
         self.classifier = nn.Sequential(
@@ -83,7 +83,7 @@ class SwinMIMICClassifier(nn.Module):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(self.device)
 
-    def __swin_loader(self, image_tensor=None):
+    def __swin_loader(self, evaluation=False, num_classes=14):
         """
         Swin V2 src for feature extraction.
         Swin V2 is a hierarchical transformer that computes representation with shifted windows.
@@ -96,11 +96,11 @@ class SwinMIMICClassifier(nn.Module):
         3. MLP Head: A multi-layer perceptron that processes the output of the transformer encoder to produce the final feature representation.
 
         Args:
-            image_tensor: Pre-processed image tensor.
+            evaluation (bool): set model directly in evaluation mode if Ture. Defaults to False
         """
 
         # Load Pre-Trained src
-        model = timm.create_model("swinv2_base_window8_256.ms_in1k", pretrained=True)
+        model = timm.create_model("swinv2_base_window8_256.ms_in1k", pretrained=True, num_classes=num_classes)
 
         # Modify the first convolutional layer to accept grayscale input (1 channel) instead of RGB (3 channels)
         conv1 = model.patch_embed.proj  # First conv layer
@@ -123,7 +123,8 @@ class SwinMIMICClassifier(nn.Module):
         model.head = nn.Identity()
 
         # Set src to evaluation mode
-        model.eval()
+        if evaluation:
+            model.eval()
 
         # Test on a sample image
         # with torch.no_grad():
@@ -220,6 +221,8 @@ class SwinMIMICClassifier(nn.Module):
             Dictionary with evaluation metrics.
         """
         self.eval()
+        self.swin_model.eval()
+
         all_labels = []
         all_preds = []
 
