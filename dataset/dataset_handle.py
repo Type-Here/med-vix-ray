@@ -19,6 +19,8 @@ def _load_dataset_metadata():
 
     Returns:
         pd.DataFrame: DataFrame containing dataset metadata.
+    Raises:
+        FileNotFoundError: If the dataset path does not exist.
     """
     # Check if the dataset path exists
     if not os.path.exists(DATASET_INFO_CSV_DIR):
@@ -37,6 +39,8 @@ def _load_labels():
     Load labels from the specified directory.
     Returns:
         pd.DataFrame: DataFrame containing labels.
+    Raises:
+        FileNotFoundError: If the dataset path or file does not exist.
     """
     # Check if the dataset path exists
     if not os.path.exists(DATASET_INFO_CSV_DIR):
@@ -59,7 +63,14 @@ def load_ready_dataset(phase='train'):
 
     Returns:
         pd.DataFrame: DataFrame containing the dataset for the specified phase.
+
+    Raises:
+        FileNotFoundError: If the dataset path or file does not exist.
+        ValueError: If the phase is not one of 'train', 'validation', or 'test'.
     """
+    if phase not in ['train', 'validation', 'test']:
+        raise ValueError("Phase must be 'train', 'validation', or 'test'.")
+
     # Check if the dataset path exists
     if not os.path.exists(DATASET_INFO_CSV_DIR):
         raise FileNotFoundError(f"Dataset path {DATASET_INFO_CSV_DIR} does not exist.")
@@ -201,6 +212,10 @@ def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH):
 
     Returns:
         list: List of image paths.
+
+    Raises:
+        FileNotFoundError: If the CSV file does not exist.
+        ValueError: If csv_file is neither a DataFrame nor a string.
     """
     # Check if csv_file is a DataFrame or a string
     if isinstance(csv_file, pd.DataFrame):
