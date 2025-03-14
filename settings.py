@@ -42,8 +42,9 @@ BATCH_SIZE = 16
 
 UNBLOCKED_LEVELS = 3 # Number of unblocked levels in the Swin Transformer (from end to start)
 
-SWIN_MODEL_SAVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'swin_model.pth')
-SWIN_STATS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'swin_stats.json')
+SWIN_MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'models', 'gnn_swin')
+SWIN_MODEL_SAVE_PATH = os.path.join(SWIN_MODEL_DIR, 'swin_model.pth')
+SWIN_STATS_PATH = os.path.join(SWIN_MODEL_DIR, 'src', 'swin_stats.json')
 
 # Dataset Split
 TRAIN_TEST_SPLIT = 0.8 # Ratio of training to testing data
