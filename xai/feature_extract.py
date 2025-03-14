@@ -5,7 +5,7 @@ from scipy.stats import entropy, skew, kurtosis
 
 def extract_heatmap_features(map, threshold=0.5):
     """
-    Extract numerical features from the attention heatmap of the model.
+    Extract numerical features from the attention heatmap of the src.
 
     Args:
         map (np.array): Attention Map or Heatmap (256x256).

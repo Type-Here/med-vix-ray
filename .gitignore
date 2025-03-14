@@ -176,7 +176,14 @@ cython_debug/
 # MANUAL
 ontology/radlex_graph.*
 ontology/scispacy/__*
+# Ignore entity_map.json from scispacy on report entity extraction
+ontology/data/entity_map.json
+
 mimic/*
 
 # Removed RadLex ontology files - Dimension is over GitHub reccommendations
 ontology/data/RadLex.owl
+
+# Ignore Metrics, JSON and saved models dir or files
+/src/models/*
+

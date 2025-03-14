@@ -5,10 +5,10 @@ from settings import SIMILARITY_THRESHOLD
 
 # ========================================================== NODES VALUES ATTRIBUTION =========================================================
 
-# 1. Load the pre-trained SciSpacy model for the medical domain
+# 1. Load the pre-trained SciSpacy src for the medical domain
 nlp = spacy.load("en_core_sci_sm")
 
-# 2. Load a pre-trained Word2Vec or FastText model to find synonyms
+# 2. Load a pre-trained Word2Vec or FastText src to find synonyms
 word_vectors = KeyedVectors.load_word2vec_format("word2vec_healthcare.bin", binary=True)
 
 

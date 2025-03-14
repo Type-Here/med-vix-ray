@@ -11,7 +11,7 @@ from torchvision import transforms
 
 from settings import MODELS_DIR, DATASET_PATH, DOWNLOADED_FILES, MIMIC_LABELS
 
-# Create save model directory if it doesn't exist
+# Create save src directory if it doesn't exist
 if not os.path.exists(MODELS_DIR):
     os.makedirs(MODELS_DIR, exist_ok=True)
 
@@ -36,7 +36,7 @@ def save_metrics_to_file(metrics, output_file = "metrics.json", save_dir = MODEL
 def evaluate_predictions(predictions, test_dataset, threshold=0.5):
     """
     Valuta le predizioni fatte dal modello sul test set.
-    Evaluate the predictions made by the model on the test set.
+    Evaluate the predictions made by the src on the test set.
 
     :param predictions: Dictionary or Numpy Array with image paths as keys and predicted probabilities as values.
     :type predictions: dict or np.ndarray
@@ -134,11 +134,11 @@ def __baseline_simple_test():
 
     num_classes = 14
 
-    # Adapts the model to the number of classes in MIMIC-CXR (14 classes)
+    # Adapts the src to the number of classes in MIMIC-CXR (14 classes)
     model = timm.create_model("swinv2_base_window8_256.ms_in1k", pretrained=True, num_classes=num_classes)
     print("📌 Original Model Head:", model.head)
 
-    # Set the model to evaluation mode
+    # Set the src to evaluation mode
     model.eval()
     # Define the image preprocessing pipeline
     test_image = torch.randn(1, 3, 256, 256)  # Simulate an input image
@@ -150,26 +150,26 @@ def __baseline_simple_test():
 
 def baseline_evaluation(testing_dataset):
     """
-    Evaluate the baseline model to check its base performance, without any fine-tuning.
-    This function loads the baseline model, processes the test dataset, and evaluates the predictions.
+    Evaluate the baseline src to check its base performance, without any fine-tuning.
+    This function loads the baseline src, processes the test dataset, and evaluates the predictions.
     :param testing_dataset: The test dataset to evaluate.
     :type testing_dataset: pd.DataFrame
 
     :return: Dictionary with predictions for each image. Keys are image paths, values are predicted probabilities.
     """
-    # Load the baseline model.
-    # model = torch.load(os.path.join(MODELS_DIR, 'baseline_model.pth'))
+    # Load the baseline src.
+    # src = torch.load(os.path.join(MODELS_DIR, 'baseline_model.pth'))
 
-    # Load Swin Transformer model
+    # Load Swin Transformer src
     model = timm.create_model("swinv2_base_window8_256.ms_in1k", pretrained=True, num_classes=14)
 
-    # Adapts the model to the number of classes in MIMIC-CXR (with 14 classes)
-    #model.head = torch.nn.Linear(model.head.in_features, num_classes)
+    # Adapts the src to the number of classes in MIMIC-CXR (with 14 classes)
+    #src.head = torch.nn.Linear(src.head.in_features, num_classes)
 
-    # Check if the model head is correctly modified
+    # Check if the src head is correctly modified
     print("✅ Model head after modification:", model.head)
 
-    # Set the model to evaluation mode
+    # Set the src to evaluation mode
     model.eval()
 
     # Get all image paths from the test dataset

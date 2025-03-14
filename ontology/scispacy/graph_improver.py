@@ -7,7 +7,7 @@ from collections import Counter
 from settings import MIMIC_REPORT_DIR, NUM_WORKERS, RADLEX_DATA_DIR
 # MODEL = "https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_md-0.5.4.tar.gz"
 
-# Load the SciSpacy model
+# Load the SciSpacy src
 MODEL_NAME = "en_core_sci_md"
 model = spacy.load(MODEL_NAME)
 

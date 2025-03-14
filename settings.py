@@ -9,7 +9,7 @@ RADLEX_GRAPH = os.path.join(RADLEX_GRAPH_DIR, 'radlex_graph.json')
 FILTER_RADLEX_JSON = os.path.join(RADLEX_DATA_DIR, 'filter.json')
 
 # Model Save directory
-MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model', 'models')
+MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'models')
 
 # Report data
 MIMIC_REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mimic')
@@ -42,8 +42,8 @@ BATCH_SIZE = 16
 
 UNBLOCKED_LEVELS = 3 # Number of unblocked levels in the Swin Transformer (from end to start)
 
-SWIN_MODEL_SAVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model', 'swin_model.pth')
-SWIN_STATS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'model', 'swin_stats.json')
+SWIN_MODEL_SAVE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'swin_model.pth')
+SWIN_STATS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'swin_stats.json')
 
 # Dataset Split
 TRAIN_TEST_SPLIT = 0.8 # Ratio of training to testing data

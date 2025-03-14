@@ -19,8 +19,8 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 def vit_loader():
     """
-    Vision Transformer (ViT) model for feature extraction.
-    ViT is a transformer-based model that processes images as sequences of patches.
+    Vision Transformer (ViT) src for feature extraction.
+    ViT is a transformer-based src that processes images as sequences of patches.
     Warning
     -------
     This function is not fully implemented yet.
@@ -38,7 +38,7 @@ def vit_loader():
     images, labels = next(iter(dataloader))
     print(f"Shape batch immagini: {images.shape}")  # Output: [16, 1, 256, 256]
     # -------------------------------------------------------------------------------
-    # Load pretrained ViT model
+    # Load pretrained ViT src
     vit_model = timm.create_model('vit_base_patch16_256', pretrained=True)
     # Substitute head for feature extraction
     vit_model.head = nn.Identity()  # Output embedding instead of classification
@@ -50,9 +50,9 @@ def vit_loader():
 
 class SwinMIMICClassifier(nn.Module):
     """
-        SwinMIMICClassifier is a multi-label classification model based on the Swin V2 architecture.
+        SwinMIMICClassifier is a multi-label classification src based on the Swin V2 architecture.
         It is designed to classify images from the MIMIC-CXR dataset into multiple classes.
-        The model consists of a Swin V2 feature extractor followed by a custom classifier head.
+        The src consists of a Swin V2 feature extractor followed by a custom classifier head.
 
         Attributes:
           swin_model (nn.Module): The Swin V2 feature extractor.
@@ -63,8 +63,8 @@ class SwinMIMICClassifier(nn.Module):
 
     def __init__(self, num_classes=14):  # 14 patologie in MIMIC-CXR
         """
-            Initializes the SwinMIMICClassifier model.
-            This model uses the Swin V2 architecture for feature extraction and a custom classifier head for multi-label classification.
+            Initializes the SwinMIMICClassifier src.
+            This src uses the Swin V2 architecture for feature extraction and a custom classifier head for multi-label classification.
             :param num_classes: Number of output classes (default: 14 for MIMIC-CXR).
         """
         super(SwinMIMICClassifier, self).__init__()
@@ -79,27 +79,27 @@ class SwinMIMICClassifier(nn.Module):
             nn.Sigmoid()  # Sigmoid activation for multi-label classification
         )
 
-        # Move model to available device (CPU/GPU)
+        # Move src to available device (CPU/GPU)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(self.device)
 
     def __swin_loader(self, image_tensor=None):
         """
-        Swin V2 model for feature extraction.
+        Swin V2 src for feature extraction.
         Swin V2 is a hierarchical transformer that computes representation with shifted windows.
         It is designed to be efficient and effective for various vision tasks.
 
         Simplified Swin V2 Architecture
         ------------------------------
         1. Patch Embedding: Converts the image into patches by applying a convolutional layer with large kernel size.
-        2. Transformer Encoder: Applies self-attention to the patches, allowing the model to learn relationships between them.
+        2. Transformer Encoder: Applies self-attention to the patches, allowing the src to learn relationships between them.
         3. MLP Head: A multi-layer perceptron that processes the output of the transformer encoder to produce the final feature representation.
 
         Args:
             image_tensor: Pre-processed image tensor.
         """
 
-        # Load Pre-Trained model
+        # Load Pre-Trained src
         model = timm.create_model("swinv2_base_window8_256.ms_in1k", pretrained=True)
 
         # Modify the first convolutional layer to accept grayscale input (1 channel) instead of RGB (3 channels)
@@ -116,13 +116,13 @@ class SwinMIMICClassifier(nn.Module):
         # Copy the weights from the original conv layer, averaging across channels
         new_conv1.weight.data = conv1.weight.mean(dim=1, keepdim=True)
 
-        # Replace the first conv layer in the model
+        # Replace the first conv layer in the src
         model.patch_embed.proj = new_conv1
 
         # Remove final classifier to extract features
         model.head = nn.Identity()
 
-        # Set model to evaluation mode
+        # Set src to evaluation mode
         model.eval()
 
         # Test on a sample image
@@ -132,7 +132,7 @@ class SwinMIMICClassifier(nn.Module):
         return model
 
     def forward(self, x):
-        x = self.swin_model(x)  # Pass through the Swin V2 model
+        x = self.swin_model(x)  # Pass through the Swin V2 src
         x = self.classifier(x)  # Pass through the classifier head
         return x  # Output: probabilities for each class
 
@@ -140,16 +140,16 @@ class SwinMIMICClassifier(nn.Module):
                     learning_rate_classifier=LEARNING_RATE_CLASSIFIER,
                     layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None, loss_fn_param=nn.BCELoss):
         """
-        Train the SwinMIMICClassifier model.
-        This method trains the model using the provided training and validation data loaders.
+        Train the SwinMIMICClassifier src.
+        This method trains the src using the provided training and validation data loaders.
         It unblocks the specified number of transformer blocks and the classifier head for training.
         The training process includes forward and backward passes, loss calculation, and optimizer step.
-        The model is trained using the Adam optimizer with different learning rates for the Swin Transformer layers and the classifier head.
+        The src is trained using the Adam optimizer with different learning rates for the Swin Transformer layers and the classifier head.
 
         Args:
             train_loader (DataLoader): DataLoader for training data.
             val_loader (DataLoader): DataLoader for validation data.
-            num_epochs (int): Number of epochs to train the model.
+            num_epochs (int): Number of epochs to train the src.
             learning_rate_classifier (float): Learning rate for the classifier head.
             learning_rate_swin (float): Learning rate for the Swin Transformer layers.
             optimizer_param (torch.optim.Optimizer): Optimizer for training. Default: None -> optim.Adam will be used.
@@ -211,7 +211,7 @@ class SwinMIMICClassifier(nn.Module):
 
     def model_evaluation(self, val_loader, threshold=0.5, save_stats=True):
         """
-        Evaluate the model using scikit-learn metrics for multi-label classification.
+        Evaluate the src using scikit-learn metrics for multi-label classification.
         Args:
             val_loader: DataLoader for validation data.
             threshold: Threshold for binary classification.
@@ -265,24 +265,24 @@ class SwinMIMICClassifier(nn.Module):
 
     def save_model(self, path=SWIN_MODEL_SAVE_PATH):
         """
-        Save the trained model to a file.
+        Save the trained src to a file.
         Args:
-            path (str): Path to save the model. Default: SWIN_MODEL_SAVE_PATH.
+            path (str): Path to save the src. Default: SWIN_MODEL_SAVE_PATH.
         """
         torch.save(self.swin_model.state_dict(), path)
         print(f"Model saved to {path}")
 
     def load_model(self, path=SWIN_MODEL_SAVE_PATH):
         """
-        Load a trained model from a file.
+        Load a trained src from a file.
         Args:
-            path (str): Path to load the model from. Default: SWIN_MODEL_SAVE_PATH.
+            path (str): Path to load the src from. Default: SWIN_MODEL_SAVE_PATH.
         """
         if not path.endswith('.pth'):
             raise ValueError("Path must end with .pth")
         if not os.path.exists(path):
             raise FileNotFoundError(f"Model file not found: {path}")
 
-        # Load the model state
+        # Load the src state
         self.swin_model.load_state_dict(torch.load(path))
         print(f"Model loaded from {path}")

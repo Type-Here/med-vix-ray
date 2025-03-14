@@ -12,7 +12,7 @@ class AttentionMap:
         """
         Initialize the AttentionMap class.
         Args:
-            model: Swin V2 model.
+            model: Swin V2 src.
             xai_type: Type of attention map to generate (default is "cdam").
         """
         if model is None:
@@ -37,7 +37,7 @@ class AttentionMap:
         Setter: Change the method for generating attention/heat-maps.
         Args:
             method: Method to use for generating maps. Choose "cdam" or "gradcam".
-            model: Swin V2 model.
+            model: Swin V2 src.
         Raises:
             ValueError: If the method is not recognized.
         """
@@ -52,12 +52,12 @@ class AttentionMap:
 
     def __set_grad_cam(self, model):
         """
-            Set the Grad-CAM model.
+            Set the Grad-CAM src.
         """
         # Get the target layer for Grad-CAM
         target_layer = model.swin.layers[-1].blocks[-1].attn
 
-        #self.grad_cam = LayerGradCam(model, model.swin.layers[-1].blocks[-1].attn.proj)
+        #self.grad_cam = LayerGradCam(src, src.swin.layers[-1].blocks[-1].attn.proj)
         # Create a LayerGradCam object
         self.grad_cam = LayerGradCam(model, target_layer.proj)
 
@@ -65,7 +65,7 @@ class AttentionMap:
 
     def __set_cdam(self, model):
         """
-            Set the CDAM model.
+            Set the CDAM src.
         """
         self.cdam = LayerAttribution(model, model.swin.layers[-1].blocks[-1].attn.proj)
         self.generate_attention_map = self.__extract_attention_cdam
@@ -76,12 +76,12 @@ class AttentionMap:
         """
         Generate an attention map using Grad-CAM.
         Args:
-            model: Swin V2 model.
+            model: Swin V2 src.
             image_tensor: Pre-processed image tensor (1, 1, 256, 256).
         Returns:
             Heatmap of attention areas.
         """
-        # Ensure the model is in evaluation mode
+        # Ensure the src is in evaluation mode
         model.eval()
 
         # Calculate the Grad-CAM attribution
@@ -133,7 +133,7 @@ class AttentionMap:
         Extracts attention weights from a specific layer of Swin V2.
 
         Args:
-            model: Pre-trained Swin V2 model.
+            model: Pre-trained Swin V2 src.
             image_tensor: Pre-processed image tensor (1, 1, 256, 256).
             layer_num: Transformer layer index (-1 for last layer).
 
@@ -143,12 +143,12 @@ class AttentionMap:
         model.eval()
 
         # Get the attention weights from the last transformer layer
-        # transformer_layer = model.swin.layers[layer_num].blocks[-1].attn.attn_probs
+        # transformer_layer = src.swin.layers[layer_num].blocks[-1].attn.attn_probs
         transformer_layer = model.swin.layers[layer_num].blocks[-1].attn.get_attn()
 
         # Forward pass to get the attention weights
         with torch.no_grad():
-            # Here we need to pass the image tensor through the model to get the attention weights
+            # Here we need to pass the image tensor through the src to get the attention weights
             _ = model(image_tensor)
 
         attention_map = transformer_layer.cpu().detach().numpy()
