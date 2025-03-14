@@ -1,3 +1,5 @@
+import logging
+
 import torch
 import timm
 import os
@@ -5,18 +7,22 @@ import torch.nn as nn
 import numpy as np
 import torchvision.transforms as transforms
 import torch.optim as optim
+import dataset.dataset_handle as dh
 
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
 
 # Dataset path
-from settings import DATASET_PATH, MIMIC_LABELS
-from settings import NUM_EPOCHS, BATCH_SIZE, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
+from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, DOWNLOADED_FILES, NUM_WORKERS
+from settings import NUM_EPOCHS, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
 from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
+from src.preprocess import ImagePreprocessor
 
+
+@logging.WARN("Not fully implemented yet")
 def vit_loader():
     """
     Vision Transformer (ViT) src for feature extraction.
@@ -48,6 +54,9 @@ def vit_loader():
         print(f"Output ViT feature shape: {vit_features.shape}")
 
 
+# ================================================ MIMIC SWIN CLASSIFIER ===============================================
+
+
 class SwinMIMICClassifier(nn.Module):
     """
         SwinMIMICClassifier is a multi-label classification src based on the Swin V2 architecture.
@@ -64,7 +73,8 @@ class SwinMIMICClassifier(nn.Module):
     def __init__(self, num_classes=len(MIMIC_LABELS)):  # 14 patologie in MIMIC-CXR
         """
             Initializes the SwinMIMICClassifier src.
-            This src uses the Swin V2 architecture for feature extraction and a custom classifier head for multi-label classification.
+            This src uses the Swin V2 architecture for feature extraction and a custom classifier
+            head for multi-label classification.
             :param num_classes: Number of output classes (default: 14 for MIMIC-CXR).
         """
         super(SwinMIMICClassifier, self).__init__()
@@ -137,7 +147,7 @@ class SwinMIMICClassifier(nn.Module):
         x = self.classifier(x)  # Pass through the classifier head
         return x  # Output: probabilities for each class
 
-    def train_model(self, train_loader, val_loader, num_epochs=NUM_EPOCHS, learning_rate_swin=LEARNING_RATE_TRANSFORMER,
+    def train_model(self, train_loader, num_epochs=NUM_EPOCHS, learning_rate_swin=LEARNING_RATE_TRANSFORMER,
                     learning_rate_classifier=LEARNING_RATE_CLASSIFIER,
                     layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None, loss_fn_param=nn.BCELoss):
         """
@@ -149,7 +159,6 @@ class SwinMIMICClassifier(nn.Module):
 
         Args:
             train_loader (DataLoader): DataLoader for training data.
-            val_loader (DataLoader): DataLoader for validation data.
             num_epochs (int): Number of epochs to train the src.
             learning_rate_classifier (float): Learning rate for the classifier head.
             learning_rate_swin (float): Learning rate for the Swin Transformer layers.
@@ -260,8 +269,8 @@ class SwinMIMICClassifier(nn.Module):
 
         # Save metrics to file
         if save_stats:
-            with open(SWIN_STATS_PATH, 'w') as f:
-                f.write(str(metrics))
+            with open(SWIN_STATS_PATH, 'w') as file:
+                file.write(str(metrics))
             print(f"Metrics saved to {SWIN_STATS_PATH}")
 
         return metrics
@@ -289,3 +298,83 @@ class SwinMIMICClassifier(nn.Module):
         # Load the src state
         self.swin_model.load_state_dict(torch.load(path))
         print(f"Model loaded from {path}")
+
+
+if __name__ == "__main__":
+
+    # Initialize the SwinMIMICClassifier
+    ft_model = SwinMIMICClassifier()
+
+    SAVE_DIR = os.path.join(MODELS_DIR, "fine_tuned")
+
+    if not os.path.exists(SAVE_DIR):
+        os.makedirs(SAVE_DIR)
+
+    # Load Model if exists
+    model_path = os.path.join(SAVE_DIR, "fine_tuned_model.pth")
+
+    if os.path.exists(model_path):
+        print(f"Model exists in {model_path}; Load it?")
+        if input("y/N: ").lower() == "y":
+            ft_model.load_model(model_path)
+        elif input("Do you want to train a new model? (y/N): ").lower() == "y":
+            pass
+        else:
+            print("Exiting...")
+            exit(0)
+
+    # Load dataset
+    try:
+        train_dataset = dh.load_ready_dataset(phase='train')
+    except FileNotFoundError:
+        print("Train dataset not found. Creating a new one.")
+        merged_data = dh.dataset_handle(partial_list=DOWNLOADED_FILES)
+        train_dataset, _, _ = dh.split_dataset(merged_data)
+
+    try:
+        validation_dataset = dh.load_ready_dataset(phase='validation')
+    except FileNotFoundError:
+        print("Validation dataset not found. Since Train dataset was created or loaded \n there should be a validation dataset too.")
+        print("Check the dataset folder or code.")
+        exit(1)
+
+    print("Train and Validation information dataset loaded.")
+
+    # Obtain Paths
+    train_image_paths = dh.fetch_image_from_csv(train_dataset, DATASET_PATH)
+    val_image_paths = dh.fetch_image_from_csv(validation_dataset, DATASET_PATH)
+
+    # Obtain Dataloaders in order to improve performance
+    training_loader = DataLoader(ImagePreprocessor(train_image_paths), batch_size=16, shuffle=True, num_workers=NUM_WORKERS)
+    valid_loader = DataLoader(ImagePreprocessor(val_image_paths), batch_size=16, shuffle=False, num_workers=NUM_WORKERS)
+
+    # Train the model
+    print("Starting training...")
+    # NOTE: for other parameters, settings.py defines default values
+    ft_model.train_model(training_loader)
+
+    # Save the model
+    print("Saving model...")
+    ft_model.save_model(model_path)
+    print(f"Model saved to {model_path}")
+
+    # Evaluate the model
+    print("Starting evaluation...")
+    metrics_dict = ft_model.model_evaluation(valid_loader, save_stats=False)
+    print("Evaluation completed.")
+    print("Metrics:", metrics_dict)
+
+    # Save the metrics to a file
+    metrics_file = os.path.join(SAVE_DIR, "finte_tuned_metrics.json")
+    with open(metrics_file, 'w') as f:
+        f.write(str(metrics_dict))
+    print(f"Metrics saved to {metrics_file}")
+
+    # Save the model architecture to a file
+    model_architecture_file = os.path.join(SAVE_DIR, "model_architecture.txt")
+    with open(model_architecture_file, 'w') as f:
+        f.write(str(ft_model))
+    print(f"Model architecture saved to {model_architecture_file}")
+
+    print("Training and evaluation completed.")
+    print("Exiting...")
