@@ -1,5 +1,3 @@
-import logging
-
 import torch
 import timm
 import os
@@ -22,7 +20,6 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from src.preprocess import ImagePreprocessor
 
 
-@logging.WARN("Not fully implemented yet")
 def vit_loader():
     """
     Vision Transformer (ViT) src for feature extraction.
@@ -57,6 +54,58 @@ def vit_loader():
 # ================================================ MIMIC SWIN CLASSIFIER ===============================================
 
 
+def _swin_loader(evaluation=False, num_classes=14) -> nn.Module:
+    """
+    Swin V2 src for feature extraction.
+    Swin V2 is a hierarchical transformer that computes representation with shifted windows.
+    It is designed to be efficient and effective for various vision tasks.
+
+    Simplified Swin V2 Architecture
+    ------------------------------
+    1. Patch Embedding: Converts the image into patches by applying a convolutional layer with large kernel size.
+    2. Transformer Encoder: Applies self-attention to the patches, allowing the src to learn relationships between them.
+    3. MLP Head: A multi-layer perceptron that processes the output of the transformer encoder to produce the final feature representation.
+
+    Args:
+        evaluation (bool): set model directly in evaluation mode if Ture. Defaults to False
+    Returns:
+        model (nn.Module): The Swin V2 src for feature extraction.
+    """
+
+    # Load Pre-Trained src
+    model = timm.create_model("swinv2_base_window8_256.ms_in1k", pretrained=True, num_classes=0) # num_classes=0 should remove the head
+
+    # Modify the first convolutional layer to accept grayscale input (1 channel) instead of RGB (3 channels)
+    conv1 = model.patch_embed.proj  # First conv layer
+    new_conv1 = nn.Conv2d(
+        in_channels=1,
+        out_channels=conv1.out_channels,
+        kernel_size=(conv1.kernel_size[0], conv1.kernel_size[1]), # Check if correct
+        stride=(conv1.stride[0], conv1.stride[1]), # Check if correct
+        padding=conv1.padding,
+        bias=(conv1.bias is not None)
+    )
+
+    # Copy the weights from the original conv layer, averaging across channels
+    new_conv1.weight.data = conv1.weight.mean(dim=1, keepdim=True)
+
+    # Replace the first conv layer in the src
+    model.patch_embed.proj = new_conv1
+
+    # Remove final classifier to extract features
+    model.head = nn.Identity()
+
+    # Set src to evaluation mode
+    if evaluation:
+        model.eval()
+
+    # Test on a sample image
+    # with torch.no_grad():
+    #    features = swin_model(image_tensor)  # Pass the pre-processed image tensor
+    #    print(f"Output Swin V2 feature shape: {features.shape}")  # Output: torch.Size([1, 1024])
+    return model
+
+
 class SwinMIMICClassifier(nn.Module):
     """
         SwinMIMICClassifier is a multi-label classification src based on the Swin V2 architecture.
@@ -78,7 +127,7 @@ class SwinMIMICClassifier(nn.Module):
             :param num_classes: Number of output classes (default: 14 for MIMIC-CXR).
         """
         super(SwinMIMICClassifier, self).__init__()
-        self.swin_model = self.__swin_loader(num_classes=num_classes)
+        self.swin_model = _swin_loader(num_classes=num_classes)
 
         # New classifier head
         self.classifier = nn.Sequential(
@@ -86,70 +135,37 @@ class SwinMIMICClassifier(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.3), # Dropout
             nn.Linear(512, num_classes),  # Final Output: 14 classes (MIMIC-CXR labels)
-            nn.Sigmoid()  # Sigmoid activation for multi-label classification
+            #nn.Sigmoid()  # Sigmoid activation for multi-label classification; Not recommended if using BCEWithLogitsLoss
         )
 
-        # Move src to available device (CPU/GPU)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.to(self.device)
-
-    def __swin_loader(self, evaluation=False, num_classes=14):
-        """
-        Swin V2 src for feature extraction.
-        Swin V2 is a hierarchical transformer that computes representation with shifted windows.
-        It is designed to be efficient and effective for various vision tasks.
-
-        Simplified Swin V2 Architecture
-        ------------------------------
-        1. Patch Embedding: Converts the image into patches by applying a convolutional layer with large kernel size.
-        2. Transformer Encoder: Applies self-attention to the patches, allowing the src to learn relationships between them.
-        3. MLP Head: A multi-layer perceptron that processes the output of the transformer encoder to produce the final feature representation.
-
-        Args:
-            evaluation (bool): set model directly in evaluation mode if Ture. Defaults to False
-        """
-
-        # Load Pre-Trained src
-        model = timm.create_model("swinv2_base_window8_256.ms_in1k", pretrained=True, num_classes=num_classes)
-
-        # Modify the first convolutional layer to accept grayscale input (1 channel) instead of RGB (3 channels)
-        conv1 = model.patch_embed.proj  # First conv layer
-        new_conv1 = nn.Conv2d(
-            in_channels=1,
-            out_channels=conv1.out_channels,
-            kernel_size=(conv1.kernel_size[0], conv1.kernel_size[1]), # Check if correct
-            stride=(conv1.stride[0], conv1.stride[1]), # Check if correct
-            padding=conv1.padding,
-            bias=(conv1.bias is not None)
-        )
-
-        # Copy the weights from the original conv layer, averaging across channels
-        new_conv1.weight.data = conv1.weight.mean(dim=1, keepdim=True)
-
-        # Replace the first conv layer in the src
-        model.patch_embed.proj = new_conv1
-
-        # Remove final classifier to extract features
-        model.head = nn.Identity()
-
-        # Set src to evaluation mode
-        if evaluation:
-            model.eval()
-
-        # Test on a sample image
-        # with torch.no_grad():
-        #    features = swin_model(image_tensor)  # Pass the pre-processed image tensor
-        #    print(f"Output Swin V2 feature shape: {features.shape}")  # Output: torch.Size([1, 1024])
-        return model
+        # Move src to available device (CPU/GPU) # Save device but not change it since instability issues on AMD
+        try:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        except Exception as e:
+            print(f"Error moving model to device: {e}")
+            exit(1)
 
     def forward(self, x):
-        x = self.swin_model(x)  # Pass through the Swin V2 src
-        x = self.classifier(x)  # Pass through the classifier head
-        return x  # Output: probabilities for each class
+        # Get features from the backbone (e.g., shape [B, 1024, 8, 8])
+        features = self.swin_model.forward_features(x)
+        # Printed the shape: [16, 8, 8, 1024] it needs to be permuted to [16, 1024, 8, 8]
+
+        # Permute dimensions to get (B, C, H, W)
+        features = features.permute(0, 3, 1, 2)  # Now shape: [16, 1024, 8, 8]
+
+        # Pooling to get [B, 1024, 1, 1]
+        pooled = torch.nn.functional.adaptive_avg_pool2d(features, (1, 1))
+
+        # Flatten to get [B, 1024]
+        pooled = pooled.view(pooled.size(0), -1)
+
+        # Pass the pooled features through the classifier head
+        logits = self.classifier(pooled)
+        return logits
 
     def train_model(self, train_loader, num_epochs=NUM_EPOCHS, learning_rate_swin=LEARNING_RATE_TRANSFORMER,
                     learning_rate_classifier=LEARNING_RATE_CLASSIFIER,
-                    layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None, loss_fn_param=nn.BCELoss):
+                    layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None, loss_fn_param= nn.BCEWithLogitsLoss()):
         """
         Train the SwinMIMICClassifier src.
         This method trains the src using the provided training and validation data loaders.
@@ -163,22 +179,29 @@ class SwinMIMICClassifier(nn.Module):
             learning_rate_classifier (float): Learning rate for the classifier head.
             learning_rate_swin (float): Learning rate for the Swin Transformer layers.
             optimizer_param (torch.optim.Optimizer): Optimizer for training. Default: None -> optim.Adam will be used.
-            loss_fn_param (torch.nn.Module): Loss function for training. Default: nn.BCELoss.
+            loss_fn_param (torch.nn.Module): Loss function for training.
+                Default: nn.BCEWithLogitsLoss() since mix sigmoid and BCE, recommended for multi-label classification.
             layers_to_unblock (int): Number of transformer blocks to unblock for training.
         """
 
         # Freeze all layers initially
-        for param in self.swin_model.swin.parameters():
+        for param in self.swin_model.parameters():
             param.requires_grad = False
 
-        # Unfreeze the last layers_to_unblock transformer blocks # Default: 3
-        for layer in list(self.swin_model.swin.layers)[-layers_to_unblock:]:
+        # Unfreeze the input layer since it was changed to accept grayscale input
+        for param in self.swin_model.patch_embed.proj.parameters():
+            param.requires_grad = True
+
+        # Unfreeze the last layers_to_unblock transformer blocks # Default: 2
+        for layer in list(self.swin_model.layers)[-layers_to_unblock:]:
+            #print(f"Unblocking layer: {layer}")
             for param in layer.parameters():
                 param.requires_grad = True
 
-        # Unfreeze the classifier head
-        for param in self.swin_model.classifier.parameters():
-            param.requires_grad = True
+        #self.swin_model.head = self.classifier  # Set the classifier head
+        # Unfreeze the head
+        #for param in self.swin_model.head.parameters():
+        #    param.requires_grad = True
 
         # List all parameters and their requires_grad status (whether they are trainable)
         for name, param in self.swin_model.named_parameters():
@@ -189,8 +212,8 @@ class SwinMIMICClassifier(nn.Module):
         # Group 2: Classifier head
         if optimizer_param is None:
             optimizer = optim.Adam([
-                {"params": self.swin_model.swin.layers[-3:].parameters(), "lr": learning_rate_swin}, # Lower LR for Swin Transformer
-                {"params": self.swin_model.classifier.parameters(), "lr": learning_rate_classifier}  # Higher LR for classifier head
+                {"params": self.swin_model.layers[-layers_to_unblock:].parameters(), "lr": learning_rate_swin}, # Lower LR for Swin Transformer
+                {"params": self.swin_model.head.parameters(), "lr": learning_rate_classifier}  # Higher LR for classifier head
             ])
         else:
             optimizer = optimizer_param
@@ -199,16 +222,17 @@ class SwinMIMICClassifier(nn.Module):
         loss_fn = loss_fn_param
 
         for epoch in range(num_epochs):
-            self.swin_model.train()
+            self.train()
             running_loss = 0.0
+            count = 0
 
             for images, labels in train_loader:
 
-                images, labels = images.to(self.device), labels.to(self.device)
+                #images, labels = images.to(self.device), labels.to(self.device)
                 optimizer.zero_grad()
 
                 # Forward pass
-                outputs = self.swin_model(images)
+                outputs = self(images)
                 loss = loss_fn(outputs, labels)
 
                 # Backpropagation
@@ -216,6 +240,10 @@ class SwinMIMICClassifier(nn.Module):
                 optimizer.step()
 
                 running_loss += loss.item()
+
+                if count % 200 == 0:
+                    print("Step:", count ," overall steps:", len(train_loader))
+                count += 1
 
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss:.4f}")
 
@@ -237,7 +265,7 @@ class SwinMIMICClassifier(nn.Module):
 
         with torch.no_grad():
             for images, labels in val_loader:
-                images, labels = images.to(self.device), labels.to(self.device)
+                #images, labels = images.to(self.device), labels.to(self.device)
 
                 # Forward pass
                 outputs = self(images)
@@ -301,6 +329,7 @@ class SwinMIMICClassifier(nn.Module):
 
 
 if __name__ == "__main__":
+    print("Starting ...")
 
     # Initialize the SwinMIMICClassifier
     ft_model = SwinMIMICClassifier()
@@ -322,6 +351,8 @@ if __name__ == "__main__":
         else:
             print("Exiting...")
             exit(0)
+    else:
+        print("Model not found. Training a new model.")
 
     # Load dataset
     try:
@@ -344,9 +375,18 @@ if __name__ == "__main__":
     train_image_paths = dh.fetch_image_from_csv(train_dataset, DATASET_PATH)
     val_image_paths = dh.fetch_image_from_csv(validation_dataset, DATASET_PATH)
 
+    train_labels = { train_dataset['dicom_id'][i]: train_dataset[MIMIC_LABELS].iloc[i].tolist() for i in range(len(train_dataset)) }
+    val_labels = { validation_dataset['dicom_id'][i]: validation_dataset[MIMIC_LABELS].iloc[i].tolist() for i in range(len(validation_dataset)) }
+
+    if len(train_image_paths) == 0 or len(val_image_paths) == 0:
+        print("No images found in the dataset. Check the dataset folder or code.")
+        exit(1)
+
     # Obtain Dataloaders in order to improve performance
-    training_loader = DataLoader(ImagePreprocessor(train_image_paths), batch_size=16, shuffle=True, num_workers=NUM_WORKERS)
-    valid_loader = DataLoader(ImagePreprocessor(val_image_paths), batch_size=16, shuffle=False, num_workers=NUM_WORKERS)
+    training_loader = DataLoader(ImagePreprocessor(train_image_paths, train_labels, channels_mode="L"),
+                                 batch_size=16, shuffle=True, num_workers=NUM_WORKERS)
+    valid_loader = DataLoader(ImagePreprocessor(val_image_paths, val_labels, channels_mode="L"),
+                              batch_size=16, shuffle=False, num_workers=NUM_WORKERS)
 
     # Train the model
     print("Starting training...")
@@ -365,7 +405,7 @@ if __name__ == "__main__":
     print("Metrics:", metrics_dict)
 
     # Save the metrics to a file
-    metrics_file = os.path.join(SAVE_DIR, "finte_tuned_metrics.json")
+    metrics_file = os.path.join(SAVE_DIR, "fine_tuned_metrics.json")
     with open(metrics_file, 'w') as f:
         f.write(str(metrics_dict))
     print(f"Metrics saved to {metrics_file}")
