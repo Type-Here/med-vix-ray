@@ -34,7 +34,7 @@ MIMIC_LABELS = ["Atelectasis","Cardiomegaly","Consolidation","Edema",
 
 NUM_WORKERS = 8 # Number of parallel workers for processing (Threads)
 
-# ======================== Hyperparameters for TRAINING =================================
+# ========================================= TRAINING PARAMETERS ===============================================
 NUM_EPOCHS = 10
 LEARNING_RATE_TRANSFORMER = 1e-5 # For Transformer Blocks
 LEARNING_RATE_CLASSIFIER = 1e-4 # For Classifier Head
@@ -50,6 +50,21 @@ SWIN_STATS_PATH = os.path.join(SWIN_MODEL_DIR, 'src', 'swin_stats.json')
 TRAIN_TEST_SPLIT = 0.8 # Ratio of training to testing data
 VALIDATION_SPLIT = 0.1 # Ratio of validation to testing data
 TEST_SPLIT = 0.1 # Ratio of testing data
+
+# ====== PARAMETERS FOR GRAPH WEIGHTS TRAINING ======
+# For the available Labels Correlation Edges in graph: if correlation edge is present and: (label = pathology)
+# - the pathologies are both present in a specific image (1.0 both) update the weight of +positive_weight_corr;
+# - if one of the labels is present and the other is not (1.0, 0.0) update the weight of -negative_weight_corr;
+# Default privilege for positive samples
+POSITIVE_WEIGHT_CORR = 0.7 # Weight for positive samples
+NEGATIVE_WEIGHT_CORR = -0.1 # Weight for negative samples
+
+# For Findings Edges: if a pathology is linked to a finding in the report add +positive_weight_finding;
+# if a pathology is not linked to a finding in the report add -negative_weight_finding
+# Default privilege for positive samples since the findings are statistically linked to the pathologies
+POSITIVE_WEIGHT_FINDING = 0.7 # Weight for positive samples
+NEGATIVE_WEIGHT_FINDING = -0.2 # Weight for negative samples
+
 
 # ====== PARAMETERS FOR FEATURE EXTRACTION IN XAI (Attention Map) ======
 
