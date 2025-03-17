@@ -62,9 +62,12 @@ def _swin_loader(evaluation=False, num_classes=14) -> nn.Module:
 
     Simplified Swin V2 Architecture
     ------------------------------
-    1. Patch Embedding: Converts the image into patches by applying a convolutional layer with large kernel size.
-    2. Transformer Encoder: Applies self-attention to the patches, allowing the src to learn relationships between them.
-    3. MLP Head: A multi-layer perceptron that processes the output of the transformer encoder to produce the final feature representation.
+    1. Patch Embedding: Converts the image into patches by applying
+    a convolutional layer with large kernel size. \n
+    2. Transformer Encoder: Applies self-attention to the patches,
+    allowing the src to learn relationships between them. \n
+    3. MLP Head: A multi-layer perceptron that processes the output of the transformer encoder
+    to produce the final feature representation.
 
     Args:
         evaluation (bool): set model directly in evaluation mode if Ture. Defaults to False
@@ -73,7 +76,8 @@ def _swin_loader(evaluation=False, num_classes=14) -> nn.Module:
     """
 
     # Load Pre-Trained src
-    model = timm.create_model("swinv2_base_window8_256.ms_in1k", pretrained=True, num_classes=0) # num_classes=0 should remove the head
+    model = timm.create_model("swinv2_base_window8_256.ms_in1k", pretrained=True, num_classes=0)
+    # num_classes=0 should remove the head
 
     # Modify the first convolutional layer to accept grayscale input (1 channel) instead of RGB (3 channels)
     conv1 = model.patch_embed.proj  # First conv layer
@@ -135,7 +139,8 @@ class SwinMIMICClassifier(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.3), # Dropout
             nn.Linear(512, num_classes),  # Final Output: 14 classes (MIMIC-CXR labels)
-            #nn.Sigmoid()  # Sigmoid activation for multi-label classification; Not recommended if using BCEWithLogitsLoss
+            #nn.Sigmoid()  # Sigmoid activation for multi-label classification;
+            # Sigmoid(): Not recommended if using BCEWithLogitsLoss
         )
 
         # Move src to available device (CPU/GPU) # Save device but not change it since instability issues on AMD
@@ -163,15 +168,18 @@ class SwinMIMICClassifier(nn.Module):
         logits = self.classifier(pooled)
         return logits
 
-    def train_model(self, train_loader, num_epochs=NUM_EPOCHS, learning_rate_swin=LEARNING_RATE_TRANSFORMER,
+    def train_model(self, train_loader, num_epochs=NUM_EPOCHS,
+                    learning_rate_swin=LEARNING_RATE_TRANSFORMER,
                     learning_rate_classifier=LEARNING_RATE_CLASSIFIER,
-                    layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None, loss_fn_param= nn.BCEWithLogitsLoss()):
+                    layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None,
+                    loss_fn_param= nn.BCEWithLogitsLoss()):
         """
         Train the SwinMIMICClassifier src.
         This method trains the src using the provided training and validation data loaders.
         It unblocks the specified number of transformer blocks and the classifier head for training.
         The training process includes forward and backward passes, loss calculation, and optimizer step.
-        The src is trained using the Adam optimizer with different learning rates for the Swin Transformer layers and the classifier head.
+        The src is trained using the Adam optimizer with different learning rates
+        for the Swin Transformer layers and the classifier head.
 
         Args:
             train_loader (DataLoader): DataLoader for training data.
@@ -184,24 +192,7 @@ class SwinMIMICClassifier(nn.Module):
             layers_to_unblock (int): Number of transformer blocks to unblock for training.
         """
 
-        # Freeze all layers initially
-        for param in self.swin_model.parameters():
-            param.requires_grad = False
-
-        # Unfreeze the input layer since it was changed to accept grayscale input
-        for param in self.swin_model.patch_embed.proj.parameters():
-            param.requires_grad = True
-
-        # Unfreeze the last layers_to_unblock transformer blocks # Default: 2
-        for layer in list(self.swin_model.layers)[-layers_to_unblock:]:
-            #print(f"Unblocking layer: {layer}")
-            for param in layer.parameters():
-                param.requires_grad = True
-
-        #self.swin_model.head = self.classifier  # Set the classifier head
-        # Unfreeze the head
-        #for param in self.swin_model.head.parameters():
-        #    param.requires_grad = True
+        self.__unblock_layers(layers_to_unblock)
 
         # List all parameters and their requires_grad status (whether they are trainable)
         for name, param in self.swin_model.named_parameters():
@@ -212,8 +203,10 @@ class SwinMIMICClassifier(nn.Module):
         # Group 2: Classifier head
         if optimizer_param is None:
             optimizer = optim.Adam([
-                {"params": self.swin_model.layers[-layers_to_unblock:].parameters(), "lr": learning_rate_swin}, # Lower LR for Swin Transformer
-                {"params": self.swin_model.head.parameters(), "lr": learning_rate_classifier}  # Higher LR for classifier head
+                {"params": self.swin_model.layers[-layers_to_unblock:].parameters(),
+                 "lr": learning_rate_swin}, # Lower LR for Swin Transformer
+                {"params": self.swin_model.head.parameters(),
+                 "lr": learning_rate_classifier}  # Higher LR for classifier head
             ])
         else:
             optimizer = optimizer_param
@@ -246,6 +239,23 @@ class SwinMIMICClassifier(nn.Module):
                 count += 1
 
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss:.4f}")
+
+    def __unblock_layers(self, layers_to_unblock):
+        # Freeze all layers initially
+        for param in self.swin_model.parameters():
+            param.requires_grad = False
+        # Unfreeze the input layer since it was changed to accept grayscale input
+        for param in self.swin_model.patch_embed.proj.parameters():
+            param.requires_grad = True
+        # Unfreeze the last layers_to_unblock transformer blocks # Default: 2
+        for layer in list(self.swin_model.layers)[-layers_to_unblock:]:
+            # print(f"Unblocking layer: {layer}")
+            for param in layer.parameters():
+                param.requires_grad = True
+        # self.swin_model.head = self.classifier  # Set the classifier head
+        # Unfreeze the head
+        # for param in self.swin_model.head.parameters():
+        #    param.requires_grad = True
 
     def model_evaluation(self, val_loader, threshold=0.5, save_stats=True):
         """
@@ -365,7 +375,8 @@ if __name__ == "__main__":
     try:
         validation_dataset = dh.load_ready_dataset(phase='validation')
     except FileNotFoundError:
-        print("Validation dataset not found. Since Train dataset was created or loaded \n there should be a validation dataset too.")
+        print("Validation dataset not found. Since Train dataset was created or loaded \n"
+              " there should be a validation dataset too.")
         print("Check the dataset folder or code.")
         exit(1)
 
@@ -375,8 +386,10 @@ if __name__ == "__main__":
     train_image_paths = dh.fetch_image_from_csv(train_dataset, DATASET_PATH)
     val_image_paths = dh.fetch_image_from_csv(validation_dataset, DATASET_PATH)
 
-    train_labels = { train_dataset['dicom_id'][i]: train_dataset[MIMIC_LABELS].iloc[i].tolist() for i in range(len(train_dataset)) }
-    val_labels = { validation_dataset['dicom_id'][i]: validation_dataset[MIMIC_LABELS].iloc[i].tolist() for i in range(len(validation_dataset)) }
+    train_labels = { train_dataset['dicom_id'][i]: train_dataset[MIMIC_LABELS].iloc[i].tolist()
+                     for i in range(len(train_dataset)) }
+    val_labels = { validation_dataset['dicom_id'][i]: validation_dataset[MIMIC_LABELS].iloc[i].tolist()
+                   for i in range(len(validation_dataset)) }
 
     if len(train_image_paths) == 0 or len(val_image_paths) == 0:
         print("No images found in the dataset. Check the dataset folder or code.")
