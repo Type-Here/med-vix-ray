@@ -101,7 +101,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -117,7 +118,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -133,7 +135,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -149,7 +152,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -165,7 +169,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -181,7 +186,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -197,7 +203,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -213,7 +220,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -229,7 +237,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -245,7 +254,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -261,7 +271,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -277,7 +288,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -285,7 +297,17 @@
         "label": "Emphysema",
         "description": "Emphysema is a lung condition characterized by the destruction of the alveoli, leading to breathing difficulties.",
         "synonyms": ["pulmonary emphysema", "lung emphysema"],
-        "type": "disease"
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null,
+          "position" : [0,0,0,0]
+        }
       },
       {
        "id": "33",
@@ -300,7 +322,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -316,7 +339,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -332,7 +356,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -348,7 +373,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -364,7 +390,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -380,7 +407,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -396,7 +424,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -412,7 +441,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -428,7 +458,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -444,7 +475,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -460,7 +492,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -476,7 +509,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -492,7 +526,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -508,7 +543,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -524,7 +560,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -540,7 +577,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -556,14 +594,26 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
         "id": "50",
         "label": "Deep Sulcus Sign",
         "description": "The deep sulcus sign is a radiological sign seen on supine chest X-rays, characterized by the presence of a deep costophrenic angle, often indicating a pneumothorax.",
-        "synonyms": ["deep sulcus sign", "deep costophrenic angle"]
+        "synonyms": ["deep sulcus sign", "deep costophrenic angle"],
+        "type": "sign",
+        "features": {
+          "intensity": null,
+          "variance": null,
+          "entropy": null,
+          "active_dim" : null,
+          "skewness": null,
+          "kurtosis": null,
+          "fractal": null,
+          "position" : [0,0,0,0]
+        }
       },
       {
         "id": "51",
@@ -578,7 +628,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -594,7 +645,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -610,7 +662,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -626,7 +679,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -642,7 +696,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -658,7 +713,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -674,7 +730,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -690,7 +747,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       },
       {
@@ -706,7 +764,8 @@
           "active_dim" : null,
           "skewness": null,
           "kurtosis": null,
-          "fractal": null
+          "fractal": null,
+          "position" : [0,0,0,0]
         }
       }
 
