@@ -5,7 +5,6 @@ import torch.nn as nn
 import numpy as np
 import torchvision.transforms as transforms
 import torch.optim as optim
-import dataset.dataset_handle as dh
 
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
@@ -17,6 +16,7 @@ from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
+from src import general
 from src.preprocess import ImagePreprocessor
 
 
@@ -198,18 +198,8 @@ class SwinMIMICClassifier(nn.Module):
         for name, param in self.swin_model.named_parameters():
             print(f"{name}: requires_grad = {param.requires_grad}")
 
-        # Define two parameter groups with different learning rates
-        # Group 1: Swin Transformer layers
-        # Group 2: Classifier head
-        if optimizer_param is None:
-            optimizer = optim.Adam([
-                {"params": self.swin_model.layers[-layers_to_unblock:].parameters(),
-                 "lr": learning_rate_swin}, # Lower LR for Swin Transformer
-                {"params": self.swin_model.head.parameters(),
-                 "lr": learning_rate_classifier}  # Higher LR for classifier head
-            ])
-        else:
-            optimizer = optimizer_param
+        optimizer = self.__create_optimizer(layers_to_unblock, learning_rate_classifier, learning_rate_swin,
+                                            optimizer_param)
 
         # Binary Cross-Entropy for multi-label classification
         loss_fn = loss_fn_param
@@ -239,6 +229,21 @@ class SwinMIMICClassifier(nn.Module):
                 count += 1
 
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss:.4f}")
+
+    def __create_optimizer(self, layers_to_unblock, learning_rate_classifier, learning_rate_swin, optimizer_param):
+        # Define two parameter groups with different learning rates
+        # Group 1: Swin Transformer layers
+        # Group 2: Classifier head
+        if optimizer_param is None:
+            optimizer = optim.Adam([
+                {"params": self.swin_model.layers[-layers_to_unblock:].parameters(),
+                 "lr": learning_rate_swin},  # Lower LR for Swin Transformer
+                {"params": self.swin_model.head.parameters(),
+                 "lr": learning_rate_classifier}  # Higher LR for classifier head
+            ])
+        else:
+            optimizer = optimizer_param
+        return optimizer
 
     def __unblock_layers(self, layers_to_unblock):
         # Freeze all layers initially
@@ -352,54 +357,11 @@ if __name__ == "__main__":
     # Load Model if exists
     model_path = os.path.join(SAVE_DIR, "fine_tuned_model.pth")
 
-    if os.path.exists(model_path):
-        print(f"Model exists in {model_path}; Load it?")
-        if input("y/N: ").lower() == "y":
-            ft_model.load_model(model_path)
-        elif input("Do you want to train a new model? (y/N): ").lower() == "y":
-            pass
-        else:
-            print("Exiting...")
-            exit(0)
-    else:
-        print("Model not found. Training a new model.")
+    if not general.model_option(model_path, ft_model):
+        exit(0)
 
-    # Load dataset
-    try:
-        train_dataset = dh.load_ready_dataset(phase='train')
-    except FileNotFoundError:
-        print("Train dataset not found. Creating a new one.")
-        merged_data = dh.dataset_handle(partial_list=DOWNLOADED_FILES)
-        train_dataset, _, _ = dh.split_dataset(merged_data)
-
-    try:
-        validation_dataset = dh.load_ready_dataset(phase='validation')
-    except FileNotFoundError:
-        print("Validation dataset not found. Since Train dataset was created or loaded \n"
-              " there should be a validation dataset too.")
-        print("Check the dataset folder or code.")
-        exit(1)
-
-    print("Train and Validation information dataset loaded.")
-
-    # Obtain Paths
-    train_image_paths = dh.fetch_image_from_csv(train_dataset, DATASET_PATH)
-    val_image_paths = dh.fetch_image_from_csv(validation_dataset, DATASET_PATH)
-
-    train_labels = { train_dataset['dicom_id'][i]: train_dataset[MIMIC_LABELS].iloc[i].tolist()
-                     for i in range(len(train_dataset)) }
-    val_labels = { validation_dataset['dicom_id'][i]: validation_dataset[MIMIC_LABELS].iloc[i].tolist()
-                   for i in range(len(validation_dataset)) }
-
-    if len(train_image_paths) == 0 or len(val_image_paths) == 0:
-        print("No images found in the dataset. Check the dataset folder or code.")
-        exit(1)
-
-    # Obtain Dataloaders in order to improve performance
-    training_loader = DataLoader(ImagePreprocessor(train_image_paths, train_labels, channels_mode="L"),
-                                 batch_size=16, shuffle=True, num_workers=NUM_WORKERS)
-    valid_loader = DataLoader(ImagePreprocessor(val_image_paths, val_labels, channels_mode="L"),
-                              batch_size=16, shuffle=False, num_workers=NUM_WORKERS)
+    # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
+    training_loader, valid_loader = general.get_dataloaders()
 
     # Train the model
     print("Starting training...")
