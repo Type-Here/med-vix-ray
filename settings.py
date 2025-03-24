@@ -8,6 +8,10 @@ RADLEX_GRAPH = os.path.join(RADLEX_GRAPH_DIR, 'radlex_graph.json')
 
 FILTER_RADLEX_JSON = os.path.join(RADLEX_DATA_DIR, 'filter.json')
 
+# Manual Graph Data
+MANUAL_GRAPH_DIR = RADLEX_GRAPH_DIR
+MANUAL_GRAPH = os.path.join(MANUAL_GRAPH_DIR, 'graph_gnn.json')
+
 # Model Save directory
 MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'models')
 
@@ -52,6 +56,8 @@ VALIDATION_SPLIT = 0.1 # Ratio of validation to testing data
 TEST_SPLIT = 0.1 # Ratio of testing data
 
 # ====== PARAMETERS FOR GRAPH WEIGHTS TRAINING ======
+EPOCH_GRAPH_INTEGRATION = NUM_EPOCHS // 5 # Number of epochs for graph integration (Default: 20%)
+
 # For the available Labels Correlation Edges in graph: if correlation edge is present and: (label = pathology)
 # - the pathologies are both present in a specific image (1.0 both) update the weight of +positive_weight_corr;
 # - if one of the labels is present and the other is not (1.0, 0.0) update the weight of -negative_weight_corr;
@@ -65,6 +71,8 @@ NEGATIVE_WEIGHT_CORR = -0.1 # Weight for negative samples
 POSITIVE_WEIGHT_FINDING = 0.7 # Weight for positive samples
 NEGATIVE_WEIGHT_FINDING = -0.2 # Weight for negative samples
 
+# LOSS FROM GRAPH
+LAMBDA_REG=0.05 # Regularization parameter for the loss function
 
 # ====== PARAMETERS FOR FEATURE EXTRACTION IN XAI (Attention Map) ======
 
