@@ -187,3 +187,5 @@ ontology/data/RadLex.owl
 # Ignore Metrics, JSON and saved models dir or files
 /src/models/*
 
+# Ignore all nlp tests
+ontology/scispacy/nlp_tests/*
