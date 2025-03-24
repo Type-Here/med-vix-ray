@@ -9,7 +9,7 @@ from settings import MIMIC_REPORT_DIR, NUM_WORKERS, RADLEX_DATA_DIR
 
 # Load the SciSpacy src
 MODEL_NAME = "en_core_sci_md"
-model = spacy.load(MODEL_NAME)
+ner_model = spacy.load(MODEL_NAME)
 
 
 def __extract_medical_entities(text):
@@ -22,7 +22,7 @@ def __extract_medical_entities(text):
         Returns:
             list: list of extracted medical entities.
     """
-    doc = model(text)
+    doc = ner_model(text)
     return [ent.text for ent in doc.ents]  # Return a list of entities
 
 

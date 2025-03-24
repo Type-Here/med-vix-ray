@@ -25,21 +25,21 @@ class AttentionMap:
         if xai_type not in ["cdam", "gradcam"]:
             raise ValueError("Invalid type. Choose 'cdam' or 'gradcam'.")
         if xai_type == "cdam":
-            print("⚠️ CDAM is not fully implemented yet. Using Grad-CAM instead.")
+            print("Using CDAM...")
             self.__set_cdam(model)
         else:
-            print("✅ Using Grad-CAM for attention map generation.")
+            print("Using Grad-CAM for attention map generation.")
             self.__set_grad_cam(model)
 
     # -------- SETTER: CHANGE XAI TYPE --------
     def set_generation_method(self, method, model):
         """
-        Change the method for generating attention/heat-maps.
-        Args:
-            method: "cdam" or "gradcam".
-            model: Swin V2 model.
-        Raises:
-            ValueError: If the method is not recognized.
+            Change the method for generating attention/heat-maps.
+            Args:
+                method: "cdam" or "gradcam".
+                model: Swin V2 model.
+            Raises:
+                ValueError: If the method is not recognized.
         """
         if method == "cdam":
             self.__set_cdam(model)
@@ -100,18 +100,28 @@ class AttentionMap:
         Returns:
             Normalized attention heatmap.
         """
+        # Ensure the model is in evaluation mode
         model.eval()
+
         # Retrieve attention weights using a custom method (assumes get_attn() exists)
         transformer_layer = model.swin.layers[layer_num].blocks[-1].attn.get_attn()
+        print("Layer Obtained:", transformer_layer)
+
         with torch.no_grad():
             _ = model(image_tensor)
+
+        # Convert attention weights to numpy array
         attention_map = transformer_layer.cpu().detach().numpy()
         # Average over all heads
         attention_map = np.mean(attention_map, axis=0)
         # Resize to match desired output size
         attention_map = cv2.resize(attention_map, (256, 256))
-        # Normalize the attention map to [0, 255]
-        res_map = cv2.normalize(attention_map, None, 0, 255, cv2.NORM_MINMAX)
+
+
+        map_dst = np.zeros_like(attention_map, dtype=np.float32)
+        # Normalize the attention map to [alpha:0, beta:255]
+        res_map = cv2.normalize(attention_map, map_dst, 0, 255, cv2.NORM_MINMAX)
+
         self.map = res_map
         return res_map
 
@@ -120,8 +130,8 @@ class AttentionMap:
         """
         Analyze pixel intensity within the attention map region.
         Args:
-            image: Grayscale X-ray image.
-            is_3d: If True, collapse the heatmap to 2D using mean.
+            image (np.array): Grayscale X-ray image as a numpy array.
+            is_3d (bool): If True, collapse the heatmap to 2D using mean.
         Returns:
             Tuple: (mean_intensity, variance_intensity) of the image region indicated by the attention map.
         Raises:
@@ -138,6 +148,7 @@ class AttentionMap:
             heatmap = self.map / np.max(self.map)
 
         # Create a mask by selecting pixels with high attention
+        # returns a boolean array
         self.mask = heatmap > ATTENTION_MAP_THRESHOLD  # Threshold
 
         # Extract the intensity values from the original image
