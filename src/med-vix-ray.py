@@ -425,20 +425,89 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
     def forward(self, x, use_graph_guidance=True, use_nudger=False):
         """
-        base_logits = super(SwinMIMICGraphClassifier, self).forward(x)
-        att_map = self.attention_map_generator.generate_attention_map(self.swin_model, x)
-        features = extract_heatmap_features(att_map)
-        self.graph = update_graph_features(self.graph, extracted_features=features, sign_label="example_sign")
+        Forward pass through the model.
+        Note:
+            If graph guidance is active, it assumes the graph bias is already injected into the transformer layers.
+            use_graph_guidance: If True, forward function adds graph nudge from graph nodes.
+        Args:
+            x (torch.Tensor): Input tensor.
+            use_graph_guidance (bool): Whether to use graph guidance.
+            use_nudger (bool): If True, nudges the classifier head using the GraphNudger module
+            (uses the attention map and stats feature in sign nodes).
+        """
+        # 1a. If graph guidance is not active, use the original forward method.
+        if not use_graph_guidance:
+            # Call the forward method of the parent class.
+            return super(SwinMIMICGraphClassifier, self).forward(x, use_classifier=True)
 
-        if self.training:
-            if self.current_epoch < self.graph_integration_start_epoch:
-                return base_logits
-            else:
-                graph_bias = self.compute_graph_bias(base_logits)
-                return base_logits + graph_bias
+        # 1b. Else, if graph guidance is active, use graph
+        # Inject graph bias into the transformer layers if not already done.
+        if not self.is_graph_used:
+            self.__inject_graph_bias_in_transformer(self.graph_matrix, use_graph_guidance)
+            self.is_graph_used = True
+
+        # 2. Call the forward method of the parent class.
+        base_logits = super(SwinMIMICGraphClassifier, self).forward(x, use_classifier=False)
+        self.base_logits = base_logits  # store for potential use
+
+        # 3. Compute classifier logits.
+        self.classifier_logits = self.classifier(base_logits)  # shape: [B, num_classes]
+
+        # 3b. Register the hook on classifier_logits to capture its gradient during backpropagation.
+        self.classifier_logits.register_hook(self._save_classifier_grad)
+
+        # 4. Generate attention map and extract features.
+        att_maps_batch = self.attention_map_generator.generate_attention_map(self.swin_model, x)
+        features_dict_batch = xai_fe.extract_heatmap_features(att_maps_batch, threshold=ATTENTION_MAP_THRESHOLD)
+
+        # 5. Convert the features dictionary to a feature vector.
+        # _compute_feature_vector returns a numpy array; convert to tensor.
+        f_vec_b = self.__compute_feature_vector(features_dict_batch)  # shape: [B, f_dim]
+        batch_size = base_logits.shape[0]
+
+        # If f_vec_b is 1D, we need to stack it to match the batch size.
+        if f_vec_b.ndim == 1:
+            heatmap_features_batch = torch.stack([
+                torch.tensor(f_vec_b, dtype=torch.float32, device=base_logits.device)
+                for _ in range(batch_size)
+            ])  # shape: [B, f_dim]
+
         else:
-            graph_bias = self.compute_graph_bias(base_logits)
-            return base_logits + graph_bias
+            # If f_vec_b is already 2D, we can use it directly.
+            heatmap_features_batch = f_vec_b
+
+        # 6. Compute the graph bias using the Nudger module.
+        # Use the attention map features and stats features.
+        if use_nudger:
+
+            if self.classifier_grad is None:
+                # If no gradient has been captured, default to ones.
+                grad_output_batch = torch.ones_like(heatmap_features_batch)
+            else:
+                grad_output_batch = self.classifier_grad  # [B, f_dim] ideally.
+
+            update_vector = self.graph_nudger(
+                heatmap_features_batch=heatmap_features_batch,
+                keys_order=self.stats_keys,
+                graph=self.graph,
+                num_diseases=len(MIMIC_LABELS),
+                grad_output=grad_output_batch
+            )
+            # 7a. Then final logits become:
+            final_logits = self.classifier_logits + update_vector  # where classifier_logits is [B, num_diseases]
+        else:
+            # 7a.2 If nudging is not used, we can still compute the graph bias.
+            final_logits = self.classifier_logits
+
+        # 8. Return the final logits.
+        return final_logits
+
+    def __save_classifier_grad(self, grad):
+        """
+        Hook function to capture the gradient of the classifier output.
+        This function stores the gradient in self.classifier_grad.
+        """
+        self.classifier_grad = grad.detach()
 
     def train_model(self, train_loader, num_epochs=NUM_EPOCHS,
                     learning_rate_swin=LEARNING_RATE_TRANSFORMER,
