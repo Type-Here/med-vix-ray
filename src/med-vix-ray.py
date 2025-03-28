@@ -292,7 +292,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
     and—after a given number of epochs—incorporates the graph information into the logits.
     """
     def __init__(self, num_classes=len(MIMIC_LABELS), graph_json=None,
-                 graph_integration_start_epoch=2, d_k=64):
+                 graph_integration_start_epoch=EPOCH_GRAPH_INTEGRATION, d_k=64):
         """
         Args:
             num_classes (int): Number of classes.
@@ -302,24 +302,56 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         super(SwinMIMICGraphClassifier, self).__init__(num_classes=num_classes)
 
-        self.graph_integration_start_epoch = graph_integration_start_epoch
-        self.current_epoch = 0
+        # Placeholder for base logits, to be used for graph bias computation.
+        self.base_logits = None
+        # Placeholder for the classifier logits, to be used for loss computation.
+        self.classifier_logits = None
+        # Placeholder for the classifier gradient, to be used for nudging backpropagation.
+        self.classifier_grad = None
+        # Placeholder for graph features list to be used for nudging. Will be filled on first call needed.
+        self.stats_keys = None
 
-        # Initialize the graph.
+        # Flag indicating whether graph guidance has been injected into transformer layers.
+        self.is_graph_used = False
+
+        # Epoch threshold to activate graph-based mechanisms (both transformer bias & final nudging).
+        self.graph_integration_start_epoch = graph_integration_start_epoch
+        # Current epoch counter (to be updated during training).
+        self.current_epoch = 0
+        # Total epochs; useful for calculating activation timing.
+        self.total_epochs = NUM_EPOCHS
+
+        # Initialize graph information.
+        # Expecting graph_json to contain "nodes" and "edges". For our vocabulary:
+        #   - Sign nodes (clinical findings) and label nodes (MIMIC pathologies) are in "nodes".
+        #   - Finding edges: label-to-sign; Correlation edges: label-to-label.
         if graph_json is None:
             self.graph = {"nodes": [], "edges": []}
-            graph_matrix = None
         else:
             self.graph = graph_json
+            # Calculate the number of sign nodes: total nodes minus number of label nodes.
             num_signs = len(graph_json["nodes"]) - len(MIMIC_LABELS)
-            graph_matrix = build_adjacency_matrix(
-                graph_json, num_diseases=len(MIMIC_LABELS), num_signs=num_signs
-            )
+            # Build the full adjacency matrix (using our helper function).
+            graph_matrix = build_adjacency_matrix(graph_json, num_diseases=len(MIMIC_LABELS), num_signs=num_signs)
+            # Save the computed adjacency matrix into the graph dictionary for later use.
+            self.graph_matrix = graph_matrix
 
-        # Initialize the AttentionMap.
-        self.attention_map_generator = AttentionMap(model=self.swin_model, xai_type="cdam")
+        # Initialize the AttentionMap module.
+        # This module will extract attention maps from the second last layer (before the classifier head)
+        # using techniques such as cdam (or gradcam) to later compare with sign node statistics.
+        self.attention_map_generator = attention.AttentionMap(model=self.swin_model, xai_type="cdam")
+
         # Initialize the GraphAttentionModule.
-        self.graph_attention_module = GraphAttentionModule(num_classes=num_classes, d_k=d_k, graph_matrix=graph_matrix)
+        # This module uses the (normalized) adjacency matrix (from both correlation and finding edges)
+        # to compute a bias that will be injected into transformer layers.
+        self.graph_attention_module = GraphAttentionModule(num_classes=num_classes, d_k=d_k, graph_matrix=self.graph_matrix)
+
+        # Initialize the GraphNudger module.
+        # This module is responsible for the final nudging operation on the classifier head:
+        # it compares attention-derived features with stored sign node statistics and computes a weight update.
+        self.graph_nudger = GraphNudger(eta=0.01)  # nudging learning rate
+
+        # Note: self.classifier is already defined in the parent class (SwinMIMICClassifier).
 
     def compute_graph_bias(self, base_logits):
         """
