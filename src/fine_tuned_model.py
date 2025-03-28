@@ -10,14 +10,13 @@ from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
 
 # Dataset path
-from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, DOWNLOADED_FILES, NUM_WORKERS
+from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR
 from settings import NUM_EPOCHS, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
 from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 
 from src import general
-from src.preprocess import ImagePreprocessor
 
 
 def vit_loader():
@@ -150,7 +149,7 @@ class SwinMIMICClassifier(nn.Module):
             print(f"Error moving model to device: {e}")
             exit(1)
 
-    def forward(self, x):
+    def forward(self, x, use_classifier=True):
         # Get features from the backbone (e.g., shape [B, 1024, 8, 8])
         features = self.swin_model.forward_features(x)
         # Printed the shape: [16, 8, 8, 1024] it needs to be permuted to [16, 1024, 8, 8]
@@ -165,7 +164,11 @@ class SwinMIMICClassifier(nn.Module):
         pooled = pooled.view(pooled.size(0), -1)
 
         # Pass the pooled features through the classifier head
-        logits = self.classifier(pooled)
+        if use_classifier:
+            logits = self.classifier(pooled)
+        else:
+            # If not using the classifier, return the pooled features
+            logits = pooled
         return logits
 
     def train_model(self, train_loader, num_epochs=NUM_EPOCHS,
