@@ -71,8 +71,14 @@ NEGATIVE_WEIGHT_CORR = -0.1 # Weight for negative samples
 POSITIVE_WEIGHT_FINDING = 0.7 # Weight for positive samples
 NEGATIVE_WEIGHT_FINDING = -0.2 # Weight for negative samples
 
+# ALPHA CORRECTION IN ATTENTION BY THE GRAPH
+ALPHA_GRAPH = 0.2 # Alpha correction factor for the graph attention mechanism
+
 # LOSS FROM GRAPH
 LAMBDA_REG=0.05 # Regularization parameter for the loss function
+
+# ETA FOR GRAPH NUDGER MODULE LEARNING RATE
+ETA_GRAPH = 0.1 # Learning rate for the graph nudger module
 
 # ====== PARAMETERS FOR FEATURE EXTRACTION IN XAI (Attention Map) ======
 
