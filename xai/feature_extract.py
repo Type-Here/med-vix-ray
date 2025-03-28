@@ -1,9 +1,50 @@
 import numpy as np
+import torch
 import cv2
-from scipy.stats import entropy, skew, kurtosis
+from scipy.stats import skew, kurtosis
 
 
 def extract_heatmap_features(att_map, threshold=0.5):
+    """
+        Extract numerical features from an attention heatmap (e.g., from CDAM or a modified Grad-CAM).
+        This is the main function to call for feature extraction.
+        It handles both single and batch inputs.
+
+        Args:
+            att_map (np.array): Attention map or heatmap (e.g., 256x256).
+            threshold (float): Threshold for binarizing the heatmap.
+
+        Returns:
+            dict: If input is a single map, returns a dictionary of extracted features.
+            If input is a batch, returns a dictionary of extracted features in multiple shapes.
+
+        Note:
+            dict features: Dictionary of extracted features, including:
+                  - intensity: Mean intensity.
+                  - variance: Variance of intensities.
+                  - entropy: Shannon entropy of the normalized histogram.
+                  - active_dim: Fraction of the heatmap activated above the threshold.
+                  - skewness: Skewness of the intensity distribution.
+                  - kurtosis: Kurtosis of the intensity distribution.
+                  - fractal: Fractal dimension computed with a box-counting method.
+                  - position: [x_min, x_max, y_min, y_max] bounding box of the activated area.
+        """
+    # If input is a batch:
+    if att_map.ndim == 3:
+        b_size = att_map.shape[0]
+        feature_dicts = []
+        for i in range(b_size):
+            feature_dicts.append(extract_heatmap_features(att_map[i], threshold))
+        # Combine the dictionaries: for each key, stack values into a tensor.
+        combined_features = {}
+        for key in feature_dicts[0]:
+            combined_features[key] = torch.tensor([d[key] for d in feature_dicts], dtype=torch.float32)
+        return combined_features
+    else:
+        # If input is a single map, extract features.
+        return __extract_heatmap_features_single_map(att_map, threshold)
+
+def __extract_heatmap_features_single_map(att_map, threshold=0.5):
     """
     Extract numerical features from an attention heatmap (e.g., from CDAM or a modified Grad-CAM).
 
@@ -22,16 +63,26 @@ def extract_heatmap_features(att_map, threshold=0.5):
               - fractal: Fractal dimension computed with a box-counting method.
               - position: [x_min, x_max, y_min, y_max] bounding box of the activated area.
     """
-    # Normalize the heatmap between 0 and 1
-    heatmap = att_map / np.max(att_map)
+    # Ensure the attention map is a float32 array.
+    att_map = att_map.astype(np.float32)
 
-    # Mean intensity and variance
+    # If the map's max value is above 1, normalize to [0,1].
+    max_val = np.max(att_map)
+    if max_val > 1.0:
+        heatmap = att_map / max_val
+    else:
+        heatmap = att_map
+
+    # Compute mean intensity and variance
     mean_intensity = np.mean(heatmap)
     variance_intensity = np.var(heatmap)
 
     # Calculate entropy using histogram of pixel intensities
     hist, _ = np.histogram(heatmap, bins=256, range=(0, 1))
-    entropy_value = entropy(hist)
+    hist = hist + 1e-6  # add epsilon to avoid log(0)
+    prob = hist / np.sum(hist)
+    entropy_value = -np.sum(prob * np.log(prob))
+    # entropy_value = entropy(hist)
 
     # Binarize the heatmap to identify activated regions
     binary_map = (heatmap > threshold).astype(np.uint8)
