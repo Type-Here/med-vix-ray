@@ -513,9 +513,26 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                     learning_rate_swin=LEARNING_RATE_TRANSFORMER,
                     learning_rate_classifier=LEARNING_RATE_CLASSIFIER,
                     layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None,
-                    loss_fn_param=nn.BCEWithLogitsLoss(), lambda_reg=0.1):
+                    loss_fn_param=nn.BCEWithLogitsLoss(), lambda_reg=LAMBDA_REG):
         """
         Custom training loop that incorporates the graph-based loss regularization.
+
+        For each batch:
+          - Compute adjusted logits using the forward pass (which applies graph guidance).
+          - Retrieve the base classifier logits (without graph bias) from self.base_logits.
+          - Compute the graph bias as: graph_bias = adjusted_logits - classifier_logits.
+          - Compute classification loss (e.g. BCEWithLogitsLoss) on the adjusted logits.
+          - Add a regularization term: λ * mean( graph_bias² ).
+
+        Args:
+            train_loader (DataLoader): DataLoader for the training dataset.
+            num_epochs (int): Number of epochs to train.
+            learning_rate_swin (float): Learning rate for the transformer blocks.
+            learning_rate_classifier (float): Learning rate for the classifier head.
+            layers_to_unblock (int): Number of layers to unblock in the Swin Transformer.
+            optimizer_param (torch.optim.Optimizer, optional): Optimizer for training. If None, defaults to AdamW.
+            loss_fn_param (callable, optional): Loss function. If None, defaults to BCEWithLogitsLoss.
+            lambda_reg (float): Regularization parameter for the graph bias term.
         """
         self.__unblock_layers(layers_to_unblock)
 
@@ -529,25 +546,35 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             running_loss = 0.0
             count = 0
 
-            print(f"Epoch {epoch + 1}/{num_epochs} (Graph integration starts at epoch {self.graph_integration_start_epoch})")
+            # Activate graph guidance only after the defined epoch.
+            graph_active = (epoch + 1) >= EPOCH_GRAPH_INTEGRATION
+            print(f"Epoch {epoch + 1}/{num_epochs} (Graph guidance active: {graph_active})")
+
             for images, labels in train_loader:
                 optimizer.zero_grad()
-                # Compute base logits (without graph bias) using the parent forward.
-                base_logits = super(SwinMIMICGraphClassifier, self).forward(images)
-                # Compute adjusted logits using our forward (which incorporates graph bias if applicable).
-                adjusted_logits = self.forward(images)
-                # Determine graph_bias if graph integration is active.
-                if self.current_epoch >= self.graph_integration_start_epoch:
-                    graph_bias = adjusted_logits - base_logits
-                else:
-                    graph_bias = torch.zeros_like(base_logits)
 
-                # Compute the classification loss.
+                # Reset the classifier gradient to None before each batch.
+                self.classifier_grad = None
+
+                # Forward pass with graph guidance and nudging enabled if active.
+                # This forward pass should update self.base_logits.
+                adjusted_logits = self.forward(images, use_graph_guidance=graph_active, use_nudger=True)
+
+                # Compute the base classifier logits by applying the classifier head.
+                # classifier_logits = self.classifier(self.base_logits)  # shape: [B, num_classes]
+                # Should be already computed in the forward pass and stored in self.classifier_logits.
+
+                # Classification loss computed on the adjusted logits.
                 loss_class = loss_fn(adjusted_logits, labels)
-                # Compute the regularization loss (L2 norm on the graph bias).
-                loss_reg = lambda_reg * torch.mean(graph_bias ** 2)
-                loss_total = loss_class + loss_reg
 
+                # Compute additional regularization loss only if graph guidance is active.
+                if graph_active:
+                    graph_bias = adjusted_logits - self.classifier_logits  # shape: [B, num_classes]
+                    loss_reg = lambda_reg * torch.mean(graph_bias ** 2)
+                else:
+                    loss_reg = 0.0
+
+                loss_total = loss_class + loss_reg
                 loss_total.backward()
                 optimizer.step()
 
@@ -607,6 +634,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         if path is None:
             path = os.path.join(MODELS_DIR, 'med_vixray_model.pth')
+
         self.save_model(path)
         self.save_graph(path.replace('.pth', '_graph.json'))
         self.save_state(path.replace('.pth', '_state.pth'))
