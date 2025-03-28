@@ -11,6 +11,10 @@ class AttentionMap:
     def __init__(self, model, xai_type="cdam"):
         """
         Initialize the AttentionMap class.
+        This class is used to generate attention maps using either CDAM or Grad-CAM methods.
+        Note:
+            - Grad-CAM does not support batch input.
+            - CDAM supports batch input.
         Args:
             model: Swin V2 model.
             xai_type: Type of attention map to generate (default is "cdam").
@@ -52,6 +56,8 @@ class AttentionMap:
     def __set_grad_cam(self, model):
         """
         Set the Grad-CAM method.
+        Warning:
+            Grad-CAM does not support batch input!
         """
         # Get the target layer for Grad-CAM (using the projection of the last attention block)
         target_layer = model.swin.layers[-1].blocks[-1].attn
@@ -61,9 +67,11 @@ class AttentionMap:
     def __set_cdam(self, model):
         """
         Set the CDAM method.
+        Note:
+            The CDAM method supports batch input also!
         """
         self.cdam = LayerAttribution(model, model.swin.layers[-1].blocks[-1].attn.proj)
-        self.generate_attention_map = self.__extract_attention_cdam
+        self.generate_attention_map = self.__generate_attention_map_cdam
 
     # ============== GRAD-CAM =================
     def __generate_attention_map_grad_cam(self, model, image_tensor):
@@ -90,7 +98,28 @@ class AttentionMap:
         return res_heatmap
 
     # ============== CDAM =================
-    def __extract_attention_cdam(self, model, image_tensor, layer_num=-1):
+
+    def __generate_attention_map_cdam(self, model, image_tensor, layer_num=-1):
+        """
+        Modified to support batch input.
+        If image_tensor has shape [B, C, H, W], this function returns a tensor of shape [B, H_out, W_out].
+        Args:
+            model: Pre-trained Swin V2 model.
+            image_tensor: Pre-processed image tensor (e.g., shape (B, 1, 256, 256)).
+            layer_num: Transformer layer index (-1 for last layer).
+        Returns:
+            Normalized attention heatmap (torch tensor).
+        """
+        b_size = image_tensor.shape[0]
+        att_maps = []
+        for i in range(b_size):
+            # Process each image separately using the existing function.
+            single_att_map = self.__extract_attention_cdam_single_image(model, image_tensor[i:i + 1], layer_num)
+            # Convert the resulting numpy array to a torch tensor.
+            att_maps.append(torch.tensor(single_att_map, dtype=torch.float32, device=image_tensor.device))
+        return torch.stack(att_maps, dim=0)
+
+    def __extract_attention_cdam_single_image(self, model, image_tensor, layer_num=-1):
         """
         Extract attention weights from a specific layer of Swin V2 (CDAM).
         Args:
@@ -100,29 +129,43 @@ class AttentionMap:
         Returns:
             Normalized attention heatmap.
         """
+        # 1. Save the current mode and set the model to evaluation mode.
+        prev_mode = model.training
+
         # Ensure the model is in evaluation mode
         model.eval()
 
+        # 2. Get the attention weights from the specified layer.
         # Retrieve attention weights using a custom method (assumes get_attn() exists)
         transformer_layer = model.swin.layers[layer_num].blocks[-1].attn.get_attn()
         print("Layer Obtained:", transformer_layer)
 
+        # 3. Run a forward pass in no_grad mode to ensure attention weights are computed.
         with torch.no_grad():
             _ = model(image_tensor)
 
-        # Convert attention weights to numpy array
+        # 4. Restore the model's original training mode.
+        if prev_mode:
+            model.train()
+
+        # 5. Convert attention weights to a NumPy array and average over heads.
         attention_map = transformer_layer.cpu().detach().numpy()
         # Average over all heads
-        attention_map = np.mean(attention_map, axis=0)
-        # Resize to match desired output size
-        attention_map = cv2.resize(attention_map, (256, 256))
+        attention_map = np.mean(attention_map, axis=0) # TODO Check if mean is the best option
 
+        # 6. Use the input image dimensions for resizing.
+        # Resize to match desired output size
+        # Assume image_tensor shape is (B, C, H, W); use dimensions of the first image.
+        _, _, hei, wei = image_tensor.shape
+        new_size = (hei, wei)
+        attention_map = cv2.resize(attention_map, new_size)
 
         map_dst = np.zeros_like(attention_map, dtype=np.float32)
-        # Normalize the attention map to [alpha:0, beta:255]
-        res_map = cv2.normalize(attention_map, map_dst, 0, 255, cv2.NORM_MINMAX)
+        # 7. Normalize the attention map to the range [0, 1].
+        res_map = cv2.normalize(attention_map, map_dst, 0, 1, cv2.NORM_MINMAX)
 
-        self.map = res_map
+        # Do not store the result in self.map to avoid side effects in concurrent calls.
+        # self.map = res_map
         return res_map
 
     # ========= ANALYSIS =============
