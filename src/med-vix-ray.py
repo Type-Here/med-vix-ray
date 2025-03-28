@@ -359,10 +359,71 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         return self.graph_attention_module(base_logits)
 
-    def forward(self, x):
+
+    def __compute_feature_vector(self, features, keys=None):
         """
-        Compute base logits using the parent class, then update the graph
-        and, if applicable, adjust the logits with the graph bias.
+        Convert a dictionary of features into a tensor vector.
+        This function allows for flexible feature selection and ordering.
+        The features are expected to be in a dictionary format, where the keys are the feature names
+        If no keys are provided, the function will use the order defined in self.stats_keys
+        by capturing the first sign node order.
+        Args:
+            features (dict): Dictionary of features (e.g., {"intensity": ..., "variance": ..., "entropy": ..., ...}).
+            keys (list, optional): List of keys specifying the order in which features should appear.
+                                   If None, a default order is used.
+
+        Returns:
+            torch.Tensor: A 1D tensor containing the selected features.
+        """
+        if keys is None and self.stats_keys is None:
+            # Defining a default order from graph order
+            # Get a sign node from the graph
+            sign_node = next((node for node in self.graph["nodes"] if node["type"] == "sign"), None)
+            feat = [feat for feat in sign_node["features"]]
+            self.stats_keys = feat
+
+            # If features is a single dictionary, compute single feature vector.
+            #return _compute_feature_vector(features, keys=self.stats_keys)
+
+            # If features is a batch, compute batch feature vectors.
+            return _compute_batch_features_vectors(features, keys_order=self.stats_keys)
+
+    def __inject_graph_bias_in_transformer(self, graph_adj_matrix, use_graph_guidance):
+        """
+        For each transformer block in the model, override its attention calculation.
+        This is where we inject the graph bias into the attention scores.
+        This is done by modifying the forward function of the attention module.
+
+        Args:
+            graph_adj_matrix (np.array): The adjacency matrix of the graph.
+            use_graph_guidance (bool): Whether to use graph guidance.
+        """
+        if not use_graph_guidance:
+            return  # do nothing
+
+        # Ensure graph_adj_matrix is a torch tensor:
+        if not torch.is_tensor(graph_adj_matrix):
+            graph_adj_matrix = torch.tensor(graph_adj_matrix, dtype=torch.float32,
+                                            device=self.swin_model.patch_embed.proj.weight.device)
+
+        graph_bias_module = GraphAttentionBias(alpha=ALPHA_GRAPH)
+        # Assume self.swin_model.layers is a list of layers, each with blocks that have an "attn" module.
+        for layer_idx, layer in enumerate(self.swin_model.layers):
+            for block_idx, block in enumerate(layer.blocks):
+                original_forward = block.attn.forward
+
+                def new_forward(x, *args, orig_forward=original_forward, **kwargs):
+                    # Get raw attention scores (this requires that the original attn returns them)
+                    attn_scores = orig_forward(x, *args, **kwargs)
+                    # Inject graph bias using our module. Expecting attn_scores to be of shape [B, H, N, N]
+
+                    modified_attn = graph_bias_module(attn_scores, graph_adj_matrix)
+                    return modified_attn
+
+                block.attn.forward = new_forward
+                print(f"Injected graph bias into layer {layer_idx}, block {block_idx}")
+
+    def forward(self, x, use_graph_guidance=True, use_nudger=False):
         """
         base_logits = super(SwinMIMICGraphClassifier, self).forward(x)
         att_map = self.attention_map_generator.generate_attention_map(self.swin_model, x)
