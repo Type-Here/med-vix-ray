@@ -5,12 +5,74 @@ import torch.nn as nn
 import numpy as np
 
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
-    MODELS_DIR
+    MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
-from xai.attention_map import AttentionMap
-from xai.feature_extract import update_graph_features, extract_heatmap_features
 
+import xai.attention_map as attention
+import xai.feature_extract as xai_fe
+
+
+def _compute_batch_features_vectors(features_dict, keys_order=None):
+    """
+    Convert a dictionary of batch features (each a tensor of shape [B] or [B, 4])
+    into a single tensor of shape [B, f_dim].
+    It expects the features to be in a dictionary format like:
+
+    { "intensity": tensor of shape [B], ... }
+
+    Args:
+        features_dict (dict): Dictionary returned by extract_heatmap_features (for batch).
+        keys_order (list, optional): List of keys specifying the order in which features should appear.
+        Otherwise, the order is taken from the dictionary keys.
+
+    Returns:
+        torch.Tensor: Concatenated features tensor of shape [B, f_dim].
+    """
+    if keys_order is not None:
+        # Gather the feature values; if a key is missing, use 0.0 as default.
+        feature_list = [features_dict.get(k, 0.0) for k in keys_order]
+    else:
+        # If no keys are provided, use the order of the features in the dictionary.
+        feature_list = [features_dict.get(k, 0.0) for k in features_dict.keys()]
+
+    for key in keys_order:
+        # Ensure each feature tensor has shape [B, 1]
+        tensor_val = features_dict[key].view(-1, 1)
+        feature_list.append(tensor_val)
+
+    # Optionally, add position features.
+    if "position" in features_dict:
+        pos = features_dict["position"].view(features_dict["position"].shape[0], -1)  # [B, 4]
+        feature_list.append(pos)
+    return torch.cat(feature_list, dim=1)
+
+
+def _compute_feature_vector(features, keys=None):
+    """
+    Convert a dictionary of features into a tensor vector.
+    This function allows for flexible feature selection and ordering.
+    The features are expected to be in a dictionary format, where the keys are the feature names
+    If no keys are provided, the function will use the order defined in self.stats_keys
+    by capturing the first sign node order.
+
+    Args:
+        features (dict): Dictionary of features (e.g., {"intensity": ..., "variance": ..., "entropy": ..., ...}).
+        keys (list, optional): List of keys specifying the order in which features should appear.
+                               If None, a default order is used, following the order of the keys in the dictionary.
+
+    Returns:
+        torch.Tensor: A 1D tensor containing the selected features.
+    """
+    if keys is not None:
+        # Gather the feature values; if a key is missing, use 0.0 as default.
+        feature_list = [features.get(k, 0.0) for k in keys]
+    else:
+        # If no keys are provided, use the order of the features in the dictionary.
+        feature_list = [features.get(k, 0.0) for k in features.keys()]
+
+    # Convert the list to a tensor. Optionally, you can set the data type.
+    return torch.tensor(feature_list, dtype=torch.float32)
 
 def build_adjacency_matrix(graph_json, num_diseases, num_signs, scale_corr=1.0, scale_find=0.7):
     # Initialize the blocks with float32 type.
