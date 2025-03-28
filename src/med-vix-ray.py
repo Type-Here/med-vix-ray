@@ -108,6 +108,21 @@ def build_adjacency_matrix(graph_json, num_diseases, num_signs, scale_corr=1.0, 
 
     return matrix_full
 
+# ========================= GRAPH ATTENTION BIAS =========================
+
+
+class GraphAttentionBias(nn.Module):
+    def __init__(self, alpha=ALPHA_GRAPH):
+        super(GraphAttentionBias, self).__init__()
+        self.alpha = nn.Parameter(torch.tensor(alpha, dtype=torch.float32))  # or fix as a hyperparameter
+
+    def forward(self, attn_scores, graph_adj_matrix):
+        # attn_scores: [B, H, N, N], graph_adj_matrix: [N, N]
+        # Expand graph matrix to batch and head dims:
+        g_expanded = graph_adj_matrix.unsqueeze(0).unsqueeze(0)  # shape [1,1,N,N]
+        modified_scores = attn_scores / (attn_scores.shape[-1]**0.5) + self.alpha * g_expanded
+        return torch.softmax(modified_scores, dim=-1)
+
 
 # ========================= GRAPH ATTENTION MODULE =========================
 
