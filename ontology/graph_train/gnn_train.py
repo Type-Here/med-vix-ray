@@ -32,12 +32,12 @@ def map_labels_to_ids(label):
         "Fracture": 5,
         "Lung Lesion": 6,
         "Lung Opacity": 7,
-        "No Finding": 8,
-        "Pleural Effusion": 9,
-        "Pleural Other": 10,
-        "Pneumonia": 11,
-        "Pneumothorax": 12,
-        "Support Devices": 13
+        "No Finding": 13,
+        "Pleural Effusion": 8,
+        "Pleural Other": 9,
+        "Pneumonia": 10,
+        "Pneumothorax": 11,
+        "Support Devices": 12
     }
     return str(label_to_id.get(label, -1))  # Return -1 if label not found
 
