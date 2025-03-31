@@ -5,7 +5,7 @@ import torch.nn as nn
 import numpy as np
 
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
-    MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD
+    MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, MIMIC_LABELS_MAP_TO_GRAPH_IDS
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
 
@@ -38,7 +38,9 @@ def _compute_batch_features_vectors(features_dict, keys_order=None):
 
     for key in keys_order:
         # Ensure each feature tensor has shape [B, 1]
-        tensor_val = features_dict[key].view(-1, 1)
+        tensor_val = (features_dict[key])
+        if tensor_val.ndim == 1:  # reshape to [B, 1]
+                      tensor_val = tensor_val.view(-1, 1)
         feature_list.append(tensor_val)
 
     # Optionally, add position features.
@@ -112,9 +114,12 @@ def build_adjacency_matrix(graph_json, num_diseases, num_signs, scale_corr=1.0, 
 
 
 class GraphAttentionBias(nn.Module):
-    def __init__(self, alpha=ALPHA_GRAPH):
+    def __init__(self, alpha=ALPHA_GRAPH, ner_ground_truth=None):
         super(GraphAttentionBias, self).__init__()
         self.alpha = nn.Parameter(torch.tensor(alpha, dtype=torch.float32))  # or fix as a hyperparameter
+
+        # Placeholder for ground truth data
+        self.ner_ground_truth = ner_ground_truth # TODO: load this from a file or database
 
     def forward(self, attn_scores, graph_adj_matrix):
         # attn_scores: [B, H, N, N], graph_adj_matrix: [N, N]
@@ -122,6 +127,98 @@ class GraphAttentionBias(nn.Module):
         g_expanded = graph_adj_matrix.unsqueeze(0).unsqueeze(0)  # shape [1,1,N,N]
         modified_scores = attn_scores / (attn_scores.shape[-1]**0.5) + self.alpha * g_expanded
         return torch.softmax(modified_scores, dim=-1)
+
+    def update_edge_weights_with_ground_truth(self, graph_json, study_id, labels):
+        """
+        Update the weights of 'finding' edges in the graph using ground truth information from reports.
+
+        For each finding edge (connecting a disease node to a sign node), update its weight based on:
+          - If the ground truth for the current study indicates the sign is present (polarity = 1),
+            use the ground truth similarity value s_gt.
+          - If the ground truth indicates a negative finding (polarity = 0) or the sign is not mentioned,
+            update the weight toward 0.
+
+        The new weight is computed using a weighted moving average:
+            w_new = (c * w_old + s_new) / (c + 1)
+
+        Args:
+            graph_json (dict): Graph data with "nodes" and "edges". Each sign node must have "id", "type"=="sign",
+                               and stored "features" (a dict).
+            study_id (str): The identifier for the current study, used to look up ground truth.
+            labels (list): Each position is the value of the node for a specific xr, 1.0 if present, 0.0 if not present.
+                The order of the labels is defined by the order of MIMIC_LABELS list in settings.py.
+
+        Returns:
+            dict: Updated graph_json with modified weights for finding edges.
+        """
+        # Convert extracted features to a feature vector (using your helper function).
+        # Not used but could be an option.
+        # new_feat_vec = _compute_feature_vector(extracted_features, keys_order)  # numpy array
+
+        # Look up ground truth for the current study.
+        # Assume ground_truth is available (e.g., a global variable) with structure:
+        # { study_id:
+        #   { "sign_node_id": [s_gt, polarity],
+        #       ...,
+        #     "dicom_ids": [dicom_id1, dicom_id2, ...],
+        #   }, ...
+        # }
+        gt_entry = self.ner_ground_truth.get(study_id, {})  # Returns a dict for this study.
+        positive_labels = []
+        for label in labels:
+            if label > 0.0:
+                # If label is positive, get its position in the labels list.
+                label_name = MIMIC_LABELS[labels.index(label)]
+                positive_labels.append(MIMIC_LABELS_MAP_TO_GRAPH_IDS[label_name])
+
+        for edge in graph_json["edges"]:
+            if edge["type"] == "correlation":
+                edge["source"] = int(edge["source"])  # disease node index
+                edge["target"] = int(edge["target"])  # disease node index
+
+                # If both disease nodes are present in the positive labels,
+                # update the weight positively.
+                if edge["source"] in positive_labels and edge["target"] in positive_labels:
+                    polarity = 1.0
+                else:
+                    polarity = 0.2
+
+                weight_old = edge.get("weight", 1.0)
+                count = edge.get("update_count", 0)
+
+                # Compute the new weight with weighted moving average.
+                weight_new = (count * weight_old + polarity) / (count + 1)
+                edge["weight"] = weight_new
+                edge["update_count"] = count + 1
+
+
+            elif edge["type"] == "finding":
+                disease_idx = int(edge["source"])  # disease node index
+
+                # If the disease node is not in the positive labels, skip this edge.
+                if disease_idx not in positive_labels:
+                    continue
+
+                sign_idx = int(edge["target"])  # sign node index
+                weight_old = edge.get("weight", 1.0)
+                count = edge.get("update_count", 0)
+
+                # Determine the new similarity value s_new.
+                # Check if the ground truth indicates anything for this sign node.
+                if str(sign_idx) in gt_entry:
+                    s_gt, polarity = gt_entry[str(sign_idx)]
+                    s_new = s_gt if polarity == 1 else 0.2
+                else:
+                    # If not mentioned, assume the sign was not observed.
+                    # TODO: Check this value
+                    s_new = 0.4
+
+                # Compute the new weight with weighted moving average.
+                weight_new = (count * weight_old + s_new) / (count + 1)
+                edge["weight"] = weight_new
+                edge["update_count"] = count + 1
+
+        return graph_json
 
 
 # ========================= GRAPH ATTENTION MODULE =========================
@@ -313,6 +410,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # Flag indicating whether graph guidance has been injected into transformer layers.
         self.is_graph_used = False
+        # Flag for training mode.
+        self.is_training = False
 
         # Epoch threshold to activate graph-based mechanisms (both transformer bias & final nudging).
         self.graph_integration_start_epoch = graph_integration_start_epoch
@@ -435,14 +534,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             use_nudger (bool): If True, nudges the classifier head using the GraphNudger module
             (uses the attention map and stats feature in sign nodes).
         """
-        # 1a. If graph guidance is not active, use the original forward method.
-        if not use_graph_guidance:
-            # Call the forward method of the parent class.
-            return super(SwinMIMICGraphClassifier, self).forward(x, use_classifier=True)
 
         # 1b. Else, if graph guidance is active, use graph
-        # Inject graph bias into the transformer layers if not already done.
-        if not self.is_graph_used:
+        if use_graph_guidance and not self.is_graph_used:
+            # Inject graph bias into the transformer layers if not already done.
+            # This is done only once, at the beginning of training so flag is set to True.
             self.__inject_graph_bias_in_transformer(self.graph_matrix, use_graph_guidance)
             self.is_graph_used = True
 
@@ -459,6 +555,15 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # 4. Generate attention map and extract features.
         att_maps_batch = self.attention_map_generator.generate_attention_map(self.swin_model, x)
         features_dict_batch = xai_fe.extract_heatmap_features(att_maps_batch, threshold=ATTENTION_MAP_THRESHOLD)
+
+        # 4b. If training mode, update the graph with the new features statistics
+        if self.is_training:
+            # Update the graph with the new feature statistics.
+            xai_fe.update_graph_features(self.graph, features_dict_batch, self.stats_keys)
+
+        # 1a. If graph guidance is not active return the classifier logits directly.
+        if not use_graph_guidance:
+            return self.classifier_logits
 
         # 5. Convert the features dictionary to a feature vector.
         # _compute_feature_vector returns a numpy array; convert to tensor.
@@ -534,6 +639,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             loss_fn_param (callable, optional): Loss function. If None, defaults to BCEWithLogitsLoss.
             lambda_reg (float): Regularization parameter for the graph bias term.
         """
+        ## Set the model to training mode.
+
+        # Set boolean flag to indicate that the model is in training mode.
+        self.is_training = True
+
+        # Unfreeze the specified layers in the transformer.
         self.__unblock_layers(layers_to_unblock)
 
         # Define optimizer with parameter groups.
@@ -547,10 +658,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             count = 0
 
             # Activate graph guidance only after the defined epoch.
-            graph_active = (epoch + 1) >= EPOCH_GRAPH_INTEGRATION
-            print(f"Epoch {epoch + 1}/{num_epochs} (Graph guidance active: {graph_active})")
+            is_graph_active = (epoch + 1) >= EPOCH_GRAPH_INTEGRATION
+            print(f"Epoch {epoch + 1}/{num_epochs} (Graph guidance active: {is_graph_active})")
 
-            for images, labels in train_loader:
+            for images, labels, study_ids in train_loader:
                 optimizer.zero_grad()
 
                 # Reset the classifier gradient to None before each batch.
@@ -558,7 +669,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
                 # Forward pass with graph guidance and nudging enabled if active.
                 # This forward pass should update self.base_logits.
-                adjusted_logits = self.forward(images, use_graph_guidance=graph_active, use_nudger=True)
+                adjusted_logits = self.forward(images, use_graph_guidance=is_graph_active, use_nudger=True)
 
                 # Compute the base classifier logits by applying the classifier head.
                 # classifier_logits = self.classifier(self.base_logits)  # shape: [B, num_classes]
@@ -568,7 +679,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 loss_class = loss_fn(adjusted_logits, labels)
 
                 # Compute additional regularization loss only if graph guidance is active.
-                if graph_active:
+                if is_graph_active:
                     graph_bias = adjusted_logits - self.classifier_logits  # shape: [B, num_classes]
                     loss_reg = lambda_reg * torch.mean(graph_bias ** 2)
                 else:
@@ -577,6 +688,13 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 loss_total = loss_class + loss_reg
                 loss_total.backward()
                 optimizer.step()
+
+                for i, study_id in enumerate(study_ids):
+                    # Update the graph with the new weights.
+                    # This function updates the weights of the edges in the graph based on the classifier logits.
+                    self.graph = self.graph_nudger.update_edge_weights_with_ground_truth(
+                        self.graph, study_id, labels[i].cpu().numpy()
+                    )
 
                 running_loss += loss_total.item()
                 count += 1
