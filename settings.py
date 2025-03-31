@@ -34,6 +34,23 @@ MIMIC_LABELS = ["Atelectasis","Cardiomegaly","Consolidation","Edema",
           "Lung Opacity","No Finding","Pleural Effusion","Pleural Other",
           "Pneumonia","Pneumothorax","Support Devices"]
 
+MIMIC_LABELS_MAP_TO_GRAPH_IDS = {
+    "Atelectasis": 0,
+    "Cardiomegaly": 1,
+    "Consolidation": 2,
+    "Edema": 3,
+    "Enlarged Cardiomediastinum": 4,
+    "Fracture": 5,
+    "Lung Lesion": 6,
+    "Lung Opacity": 7,
+    "No Finding": 13,
+    "Pleural Effusion": 8,
+    "Pleural Other": 9,
+    "Pneumonia": 10,
+    "Pneumothorax": 11,
+    "Support Devices": 12
+}
+
 # ====== PARAMETERS FOR FEATURE EXTRACTION IN NLP (Graph) ======
 
 NUM_WORKERS = 8 # Number of parallel workers for processing (Threads)
