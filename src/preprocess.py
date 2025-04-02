@@ -66,7 +66,7 @@ class ImagePreprocessor(Dataset):
         :returns: tuple(torch.Tensor, torch.Tensor): Preprocessed image tensor; List of labels for the image.
         :rtype: tuple
     """
-    def __init__(self, image_paths, image_labels, transform = None, image_size=(256, 256), channels_mode="RGB"):
+    def __init__(self, image_paths, image_labels, transform = None, image_size=(256, 256), channels_mode="RGB", return_study_id=False):
 
         self.image_size = image_size
         self.image_labels = image_labels
@@ -76,6 +76,8 @@ class ImagePreprocessor(Dataset):
             raise ValueError("channels_mode must be either 'RGB' or 'L'")
         self.channels_mode = channels_mode
         self.transform = transform
+
+        self.return_study_id = return_study_id
 
     def __len__(self):
         return len(self.image_paths)
@@ -91,11 +93,27 @@ class ImagePreprocessor(Dataset):
         key = img_pth.split("/")[-1].split(".")[0] # Suppose image key is dicom_id from mimic
         # Convert labels to Tensor
         label_tensor = torch.tensor(self.image_labels[key], dtype=torch.float)
+
+        res_list = []
+
+        # use the transform defined in the constructor
         if self.transform:
-            # use the transform defined in the constructor
-            return self.transform(img_pth), label_tensor
+            res_list.append(self.transform(img_pth))
+            res_list.append(label_tensor)
+
+        # If no transform is provided, use the default preprocessing function
         else:
-            return preprocess_image(img_pth, channels_mode=self.channels_mode), label_tensor
+            res_list.append(preprocess_image(img_pth, channels_mode=self.channels_mode))
+            res_list.append(label_tensor)
+
+        # If return_study_id is True, extract the study_id from the path
+        if self.return_study_id:
+            study_id = img_pth.split("/")[-2]
+            study_id_tensor = torch.tensor([int(study_id)], dtype=torch.float)
+            res_list.append(study_id_tensor)
+
+        return tuple(res_list)
+
 
 # =============================================
 
