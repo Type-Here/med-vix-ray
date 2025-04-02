@@ -189,3 +189,6 @@ ontology/data/RadLex.owl
 
 # Ignore all nlp tests
 ontology/scispacy/nlp_tests/*
+
+# Ignore gcloud functions
+gcloud/*
