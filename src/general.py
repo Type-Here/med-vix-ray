@@ -122,7 +122,7 @@ def _get_train_val_labels(train_dataset=None, validation_dataset=None):
 # =============================== MAIN CALLING FUNCTION TO GET DIRECTLY THE DATALOADERS ===============================
 
 
-def get_dataloaders():
+def get_dataloaders(return_study_id=False):
     """
         Get the training and validation dataloaders.
 
@@ -130,6 +130,9 @@ def get_dataloaders():
         Datasets are the same for every model, using settings.py variables to get the paths.
 
         The dataloaders are created using the ImagePreprocessor class for preprocessing images.
+        Args:
+            return_study_id (bool): If True, the dataloader will return the study_id
+            along with the image and label in the tuple.
 
         Returns:
             tuple: (DataLoader, DataLoader) for training and validation datasets.
@@ -149,9 +152,11 @@ def get_dataloaders():
     print("Train and Validation labels loaded.")
 
     # Obtain Dataloaders in order to improve performance
-    training_loader = DataLoader(ImagePreprocessor(train_image_paths, train_labels, channels_mode="L"),
+    training_loader = DataLoader(ImagePreprocessor(train_image_paths, train_labels,
+                                                   channels_mode="L", return_study_id=return_study_id),
                                  batch_size=16, shuffle=True, num_workers=NUM_WORKERS)
-    valid_loader = DataLoader(ImagePreprocessor(val_image_paths, val_labels, channels_mode="L"),
+    valid_loader = DataLoader(ImagePreprocessor(val_image_paths, val_labels,
+                                                channels_mode="L", return_study_id=return_study_id),
                               batch_size=16, shuffle=False, num_workers=NUM_WORKERS)
 
     return training_loader, valid_loader
