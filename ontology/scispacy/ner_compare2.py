@@ -100,17 +100,19 @@ def compare_signs_reports(f_graph_path, f_ner_path, f_metadata_path) -> dict:
     metadata = _load_csv_metadata(f_metadata_path)
 
     def process_study(args):
-        study_id, ner_dict = args
-        study = {'dicom_ids': metadata[metadata['study_id'] == study_id]['dicom_id'].tolist()}
+        rep_study_id, ner_dict = args
+        # Extract the study_id from the report
+        # report_study_id is in the format "sXXXX" so we remove the "s"
+        study = {'dicom_ids': metadata[metadata['study_id'] == int(rep_study_id[1:])]['dicom_id'].tolist()}
         # Iterate through each entity in the NER dictionary
         for entity, negex_value in ner_dict.items():
             for sign_node_id, sign_node in sign_nodes.items():
                 # Check if the entity matches the sign node label or synonyms
                 similarity = _calculate_similarity(entity, sign_node['label'], sign_node['synonyms'])
-                if similarity > 0.8:  # TODO Adjust the threshold as needed
+                if similarity > 0.7:  # TODO Adjust the threshold as needed
                     # Save similarity score and inverted negex value
-                    study[sign_node_id] = [similarity, not negex_value]
-        return study_id, study
+                    study[sign_node_id] = [round(similarity, 4), not negex_value]
+        return rep_study_id, study
 
     comparison_results = {}
     total_items = len(reports)
@@ -153,8 +155,8 @@ if __name__ == "__main__":
 
     print("Saving results...")
     #Save the results to a JSON file
-    with open('comparison_results.json', 'w') as file:
+    with open('comparison_results_old.json', 'w') as file:
         json.dump(compare_results, file, indent=4)
 
-    print("Results saved to comparison_results.json")
+    print("Results saved to comparison_results_old.json")
     print("Done.")
