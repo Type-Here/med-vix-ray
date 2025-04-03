@@ -79,6 +79,7 @@ def compare_signs_reports(f_graph_path, f_ner_path, f_metadata_path) -> dict:
         Returns:
             dict: Dictionary containing the comparison results.
     """
+    import concurrent.futures
     # Load the reports and metadata
     # Reports are in structured as:
     # { study_id:
@@ -98,24 +99,30 @@ def compare_signs_reports(f_graph_path, f_ner_path, f_metadata_path) -> dict:
     # Metadata contains the dicom_id and the study_id, with multiple dicom_ids per study_id.
     metadata = _load_csv_metadata(f_metadata_path)
 
-    # Initialize an empty dictionary to store the comparison results
-    comparison_results = {}
-
-    # Iterate through each study ID in the reports
-    for study_id, ner_dict in reports.items():
+    def process_study(args):
+        study_id, ner_dict = args
         study = {'dicom_ids': metadata[metadata['study_id'] == study_id]['dicom_id'].tolist()}
-        # Get the dicom IDs for the current study ID
         # Iterate through each entity in the NER dictionary
         for entity, negex_value in ner_dict.items():
             for sign_node_id, sign_node in sign_nodes.items():
                 # Check if the entity matches the sign node label or synonyms
                 similarity = _calculate_similarity(entity, sign_node['label'], sign_node['synonyms'])
-
                 if similarity > 0.8:  # TODO Adjust the threshold as needed
                     # Save similarity score and inverted negex value
                     study[sign_node_id] = [similarity, not negex_value]
+        return study_id, study
 
-        comparison_results[study_id] = study
+    comparison_results = {}
+    total_items = len(reports)
+    completed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        future_to_item = {executor.submit(process_study, item): item for item in reports.items()}
+        for future in concurrent.futures.as_completed(future_to_item):
+            study_id, study_dict = future.result()
+            completed += 1
+            if completed % 100 == 0:
+                print(f"Progress: {completed / total_items * 100:.2f}% complete")
+            comparison_results[study_id] = study_dict
 
     return comparison_results
 
@@ -136,9 +143,13 @@ if __name__ == "__main__":
     print("Results:")
     # Print the comparison results
     # Print only the first 10 results for brevity
-    for study_id_key, result in compare_results.items()[:10]:
+    i = 0
+    for study_id_key, result in compare_results.items():
         print(f"Study ID: {study_id_key}")
         print(result)
+        i += 1
+        if i >= 10:
+            break
 
     print("Saving results...")
     #Save the results to a JSON file
