@@ -9,7 +9,7 @@ RADLEX_GRAPH = os.path.join(RADLEX_GRAPH_DIR, 'radlex_graph.json')
 FILTER_RADLEX_JSON = os.path.join(RADLEX_DATA_DIR, 'filter.json')
 
 # Manual Graph Data
-MANUAL_GRAPH_DIR = RADLEX_GRAPH_DIR
+MANUAL_GRAPH_DIR = os.path.join(RADLEX_GRAPH_DIR, "data")
 MANUAL_GRAPH = os.path.join(MANUAL_GRAPH_DIR, 'graph_gnn.json')
 
 # Model Save directory
