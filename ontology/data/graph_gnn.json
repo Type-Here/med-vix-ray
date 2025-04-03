@@ -92,7 +92,7 @@
         "id": "20",
         "label": "Opacity",
         "description": "Opacity refers to an area that appears denser than normal on an X-ray.",
-        "synonyms": ["radiopacity", "radiodensity", "radiodense"],
+        "synonyms": ["radiopacity", "radiodensity", "radiodense", "opacified", "opacified region", "hilar fullness", "fullness"],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -244,8 +244,8 @@
       {
         "id": "29",
         "label": "Kerley B lines",
-        "description": "Kerley B lines are thin, horizontal lines seen on chest X-rays, often representing interstitial edema in the lungs or congestive heart failure. They are perpendicular to the pleural surface and extend out to it.",
-        "synonyms": ["kerley B lines", "b lines"],
+        "description": "Kerley B lines are thin, horizontal lines seen on chest X-rays, often representing interstitial edema in the lungs or congestive heart failure. They are perpendicular to the pleural surface and extend out to it. Added vascular congestion as synonym being correlated with the sign.",
+        "synonyms": ["kerley B lines", "b lines", "vascular congestion", "pulmonary congestion"],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -279,7 +279,7 @@
         "id": "31",
         "label": "flattening of the diaphragms",
         "description": "Flattening of the diaphragms is a radiological sign characterized by the flattening or bulging of the diaphragm, often seen in cases of emphysema or chronic obstructive pulmonary disease (COPD).",
-        "synonyms": ["flattening of the diaphragm", "diaphragm flattening", "flattened diaphragm"],
+        "synonyms": ["flattening of the diaphragm", "diaphragm flattening", "flattened diaphragm", "flattened hemidiaphragm"],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -381,7 +381,7 @@
         "id": "37",
         "label": "Cardiac Silhouette",
         "description": "Cardiac silhouette refers to the outline of the heart as seen on a chest X-ray.",
-        "synonyms": ["cardiac silhouette", "heart silhouette"],
+        "synonyms": ["cardiac silhouette", "heart silhouette", "cardiomediastinal silhouette", "cardiac contour", "cardio-mediastinic silhouette", "heart size"],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -398,7 +398,7 @@
         "id": "38",
         "label": "Calcification",
         "description": "Calcification refers to the deposition of calcium salts in tissues, often seen in various conditions.",
-        "synonyms": ["calcification", "calcified lesion"],
+        "synonyms": ["calcification", "calcified lesion", "calcified"],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -415,7 +415,7 @@
         "id": "39",
         "label": "Displaced Bone",
         "description": "Displaced bone refers to a fracture in which the bone ends are not aligned properly.",
-        "synonyms": ["displaced bone", "displaced fracture"],
+        "synonyms": ["displaced bone", "displaced fracture", "rib deformity", "rib displacement"],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -483,7 +483,7 @@
         "id": "43",
         "label": "Nodular Opacity",
         "description": "Nodular opacity refers to a small, rounded area of increased density on an X-ray, often indicating a nodule or mass.",
-        "synonyms": ["nodular opacity", "nodular lesion"],
+        "synonyms": ["nodular opacity", "nodular lesion", "nodules", "nodule"],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -500,7 +500,7 @@
         "id": "44",
         "label": "Cavitation",
         "description": "Cavitation refers to the formation of a cavity or hollow space within a solid object, often seen in lung lesions.",
-        "synonyms": ["cavitation", "cavitary lesion"],
+        "synonyms": ["cavitation", "cavitary lesion", "cavity"],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -517,7 +517,7 @@
         "id": "45",
         "label": "Mass",
         "description": "Pleural mass refers to a localized area of abnormal tissue in the pleura, the membrane surrounding the lungs.",
-        "synonyms": ["pleural mass", "pleural tumor"],
+        "synonyms": ["pleural mass", "pleural tumor", "lesion", "full mass"],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -653,7 +653,7 @@
         "id": "53",
         "label": "metallic foreign body",
         "description": "Metallic foreign body refers to any metallic object that is not part of the normal anatomy and is present in the body.",
-        "synonyms": ["metallic foreign body", "metallic object", "metallic fragment"],
+        "synonyms": ["metallic foreign body", "metallic object", "metallic fragment", "EKG leads", "EKG wires", "EKG electrodes", "ECG leads", "ECG wires", "ECG electrodes", "surgical clips" ],
         "type": "sign",
         "features": {
           "intensity": null,
@@ -668,9 +668,9 @@
       },
       {
         "id": "54",
-        "label": "drainage tube",
-        "description": "Drainage tube refers to a tube used to remove fluid or air from the body.",
-        "synonyms": ["drainage tube", "drain tube", "drain"],
+        "label": "tube",
+        "description": "Tube refers to all medical tubes used to remove fluid or air from the body. In this category: intubation, nasogastric, drainage, catheretization tube.",
+        "synonyms": ["drainage tube", "drain tube", "drain", "intubation tube", "intubation", "catheter", "catheterization", "Nasogastric tube"],
         "type": "sign",
         "features": {
           "intensity": null,
