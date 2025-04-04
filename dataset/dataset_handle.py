@@ -24,7 +24,7 @@ def _load_dataset_metadata():
     """
     # Check if the dataset path exists
     if not os.path.exists(DATASET_INFO_CSV_DIR):
-        raise FileNotFoundError(f"Dataset path {DATASET_PATH} does not exist.")
+        raise FileNotFoundError(f"Dataset path {DATASET_INFO_CSV_DIR} does not exist.")
 
     # Load the dataset metadata
     metadata_path = os.path.join(DATASET_INFO_CSV_DIR, 'metadata.csv')
