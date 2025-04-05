@@ -122,7 +122,7 @@ def _get_train_val_labels(train_dataset=None, validation_dataset=None):
 # =============================== MAIN CALLING FUNCTION TO GET DIRECTLY THE DATALOADERS ===============================
 
 
-def get_dataloaders(return_study_id=False):
+def get_dataloaders(return_study_id=False, pin_memory=False):
     """
         Get the training and validation dataloaders.
 
@@ -133,6 +133,7 @@ def get_dataloaders(return_study_id=False):
         Args:
             return_study_id (bool): If True, the dataloader will return the study_id
             along with the image and label in the tuple.
+            pin_memory (bool): If True, the dataloader will use pinned memory for faster data transfer to GPU.
 
         Returns:
             tuple: (DataLoader, DataLoader) for training and validation datasets.
@@ -154,9 +155,9 @@ def get_dataloaders(return_study_id=False):
     # Obtain Dataloaders in order to improve performance
     training_loader = DataLoader(ImagePreprocessor(train_image_paths, train_labels,
                                                    channels_mode="L", return_study_id=return_study_id),
-                                 batch_size=16, shuffle=True, num_workers=NUM_WORKERS)
+                                 batch_size=16, shuffle=True, num_workers=NUM_WORKERS, pin_memory=pin_memory)
     valid_loader = DataLoader(ImagePreprocessor(val_image_paths, val_labels,
                                                 channels_mode="L", return_study_id=return_study_id),
-                              batch_size=16, shuffle=False, num_workers=NUM_WORKERS)
+                              batch_size=16, shuffle=False, num_workers=NUM_WORKERS, pin_memory=pin_memory)
 
     return training_loader, valid_loader
