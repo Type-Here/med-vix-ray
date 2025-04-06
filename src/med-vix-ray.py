@@ -5,7 +5,8 @@ import torch.nn as nn
 import numpy as np
 
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
-    MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, MIMIC_LABELS_MAP_TO_GRAPH_IDS
+    MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, \
+    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
 
@@ -389,7 +390,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
     and—after a given number of epochs—incorporates the graph information into the logits.
     """
     def __init__(self, num_classes=len(MIMIC_LABELS), graph_json=None,
-                 graph_integration_start_epoch=EPOCH_GRAPH_INTEGRATION, d_k=64):
+                 graph_integration_start_epoch=EPOCH_GRAPH_INTEGRATION, d_k=64, ner_ground_truth=NER_GROUND_TRUTH):
         """
         Args:
             num_classes (int): Number of classes.
@@ -419,6 +420,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self.current_epoch = 0
         # Total epochs; useful for calculating activation timing.
         self.total_epochs = NUM_EPOCHS
+        # ner_ground_truth: save as variable to be used in the graph attention bias module.
+        self.ner_ground_truth = ner_ground_truth
 
         # Initialize graph information.
         # Expecting graph_json to contain "nodes" and "edges". For our vocabulary:
@@ -505,7 +508,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             graph_adj_matrix = torch.tensor(graph_adj_matrix, dtype=torch.float32,
                                             device=self.swin_model.patch_embed.proj.weight.device)
 
-        graph_bias_module = GraphAttentionBias(alpha=ALPHA_GRAPH)
+        graph_bias_module = GraphAttentionBias(alpha=ALPHA_GRAPH, ner_ground_truth=self.ner_ground_truth)
         # Assume self.swin_model.layers is a list of layers, each with blocks that have an "attn" module.
         for layer_idx, layer in enumerate(self.swin_model.layers):
             for block_idx, block in enumerate(layer.blocks):
@@ -801,10 +804,10 @@ if __name__ == "__main__":
     print("Metrics:", metrics_dict)
 
     # Save the metrics to a file
-    metrics_file = os.path.join(SAVE_DIR, "fine_tuned_metrics.json")
-    with open(metrics_file, 'w') as f:
-        f.write(str(metrics_dict))
-    print(f"Metrics saved to {metrics_file}")
+    metrics_file = os.path.join(SAVE_DIR, "med-vix_metrics.json")
+    with open(metrics_file, 'w') as file:
+        file.write(str(metrics_dict))
+    print(f"Model Metrics saved to {metrics_file}")
 
     # Save the model architecture to a file
     model_architecture_file = os.path.join(SAVE_DIR, "model_architecture.txt")
