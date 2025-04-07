@@ -88,6 +88,27 @@ def extract_heatmap_features(att_map, threshold=SIMILARITY_THRESHOLD):
         return __extract_heatmap_features_single_map(att_map, threshold)
 
 
+def __fractal_dimension(z, f_threshold=0.9):
+    """
+    Calculate fractal dimension using box-counting.
+
+    Args:
+        z (np.array): Binary map.
+        f_threshold (float): Threshold value for computing the box counts.
+    """
+    # Convert binary map to boolean mask
+    z_bool = z < f_threshold
+    sizes = 2 ** np.arange(1, 8)
+    counts = []
+    for size in sizes:
+        # Resize using nearest-neighbor interpolation to count boxes
+        resized = cv2.resize(z_bool.astype(np.uint8), (size, size),
+                             interpolation=cv2.INTER_NEAREST)
+        counts.append(np.sum(resized))
+    coeffs = np.polyfit(np.log(sizes), np.log(counts), 1)
+    return -coeffs[0]
+
+
 def __extract_heatmap_features_single_map_multiregion(att_map, threshold=SIMILARITY_THRESHOLD):
         """
         Extract features from an attention map that may contain multiple distinct sign regions.
@@ -154,33 +175,18 @@ def __extract_heatmap_features_single_map_multiregion(att_map, threshold=SIMILAR
             region_kurtosis = kurtosis(region_pixels.flatten())
 
             # Fractal dimension using box-counting.
-            def fractal_dimension_np(z, f_threshold=0.9):
-                """
-                Calculate fractal dimension using box-counting.
-
-                Args:
-                    z (np.array): Binary map.
-                    f_threshold (float): Threshold value for computing the box counts.
-                """
-                z_bool = z < f_threshold
-                sizes = 2 ** np.arange(1, 8)
-                counts = []
-                for size in sizes:
-                    # Resize using nearest-neighbor interpolation to count boxes
-                    resized = cv2.resize(z_bool.astype(np.uint8), (size, size),
-                                         interpolation=cv2.INTER_NEAREST)
-                    counts.append(np.sum(resized))
-                coeffs = np.polyfit(np.log(sizes), np.log(counts), 1)
-                return -coeffs[0]
-
-            region_fractal = fractal_dimension_np(region_mask)
+            region_fractal = __fractal_dimension(region_mask)
 
             # Bounding box using stats: [x, y, width, height]
             x, y, w, h = (stats[label, cv2.CC_STAT_LEFT], stats[label, cv2.CC_STAT_TOP],
                           stats[label, cv2.CC_STAT_WIDTH],
                           stats[label, cv2.CC_STAT_HEIGHT]
                           )
-            region_position = [x, x + w, y, y + h]
+            # Normalize the bounding box coordinates from 0 to 1
+            x_min, x_max = x / heatmap.shape[1], (x + w) / heatmap.shape[1]
+            y_min, y_max = y / heatmap.shape[0], (y + h) / heatmap.shape[0]
+
+            region_position = [x_min, x_max, y_min, y_max]
 
             region_features.append({
                 "intensity": region_intensity,
@@ -257,6 +263,9 @@ def __extract_heatmap_features_single_map(att_map, threshold=SIMILARITY_THRESHOL
         # Note: np.where returns (rows, cols) => (y, x)
         y_min, y_max = int(np.min(activated_indices[0])), int(np.max(activated_indices[0]))
         x_min, x_max = int(np.min(activated_indices[1])), int(np.max(activated_indices[1]))
+        # Normalize the values from 0 to 1
+        y_min, y_max = y_min / heatmap.shape[0], y_max / heatmap.shape[0]
+        x_min, x_max = x_min / heatmap.shape[1], x_max / heatmap.shape[1]
     else:
         # If no activation is found, default to zeros
         x_min, x_max, y_min, y_max = 0, 0, 0, 0
@@ -267,27 +276,7 @@ def __extract_heatmap_features_single_map(att_map, threshold=SIMILARITY_THRESHOL
 
     # Fractal dimension calculation using the box-counting method.
     # Here, we use a binary map with a threshold trick.
-    def fractal_dimension(z, f_threshold=0.9):
-        """
-        Calculate fractal dimension using box-counting.
-
-        Args:
-            z (np.array): Binary map.
-            f_threshold (float): Threshold value for computing the box counts.
-        """
-        # Convert binary map to boolean mask
-        z_bool = z < f_threshold
-        sizes = 2 ** np.arange(1, 8)
-        counts = []
-        for size in sizes:
-            # Resize using nearest-neighbor interpolation to count boxes
-            resized = cv2.resize(z_bool.astype(np.uint8), (size, size),
-                                 interpolation=cv2.INTER_NEAREST)
-            counts.append(np.sum(resized))
-        coeffs = np.polyfit(np.log(sizes), np.log(counts), 1)
-        return -coeffs[0]
-
-    fractal_value = fractal_dimension(binary_map)
+    fractal_value = __fractal_dimension(binary_map)
 
     return {
         "intensity": mean_intensity,
