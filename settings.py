@@ -13,7 +13,7 @@ MANUAL_GRAPH_DIR = os.path.join(RADLEX_GRAPH_DIR, "data")
 MANUAL_GRAPH = os.path.join(MANUAL_GRAPH_DIR, 'graph_gnn.json')
 
 # NER Comparison Keywords with graph
-NER_GROUND_TRUTH = os.path.join(RADLEX_GRAPH_DIR, 'reports_keywords', 'comparison_results_old.json')
+NER_GROUND_TRUTH = os.path.join(RADLEX_GRAPH_DIR, 'report_keywords', 'comparison_results_old.json')
 
 # Model Save directory
 MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'models')
