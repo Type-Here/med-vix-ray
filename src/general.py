@@ -50,6 +50,7 @@ def model_option(model_path, model_obj):
         print("Model not found. Training a new model.")
         return True
 
+
 # ======= STANDARD OPERATIONS TO GET TRAINING AND VALIDATION DATASET AND LABELS =======
 
 def _load_train_val_sets():
@@ -122,18 +123,23 @@ def _get_train_val_labels(train_dataset=None, validation_dataset=None):
 # =============================== MAIN CALLING FUNCTION TO GET DIRECTLY THE DATALOADERS ===============================
 
 
-def get_dataloaders(return_study_id=False, pin_memory=False):
+def get_dataloaders(return_study_id=False, pin_memory=False, return_train_loader=True, return_val_loader=True):
     """
         Get the training and validation dataloaders.
 
         This function loads the datasets, fetches the image paths and labels and creates the dataloaders.
         Datasets are the same for every model, using settings.py variables to get the paths.
+        Note:
+            If return_train_loader or return_val_loader is set to False, the function will return None
+            for that dataloader but a tuple is always returned.
 
         The dataloaders are created using the ImagePreprocessor class for preprocessing images.
         Args:
             return_study_id (bool): If True, the dataloader will return the study_id
             along with the image and label in the tuple.
             pin_memory (bool): If True, the dataloader will use pinned memory for faster data transfer to GPU.
+            return_train_loader (bool): If True, the dataloader will return the training dataloader.
+            return_val_loader (bool): If True, the dataloader will return the validation dataloader.
 
         Returns:
             tuple: (DataLoader, DataLoader) for training and validation datasets.
@@ -152,12 +158,19 @@ def get_dataloaders(return_study_id=False, pin_memory=False):
     train_labels, val_labels = _get_train_val_labels(train_dataset, validation_dataset)
     print("Train and Validation labels loaded.")
 
+    training_loader, valid_loader = None, None
     # Obtain Dataloaders in order to improve performance
-    training_loader = DataLoader(ImagePreprocessor(train_image_paths, train_labels,
-                                                   channels_mode="L", return_study_id=return_study_id),
-                                 batch_size=16, shuffle=True, num_workers=NUM_WORKERS, pin_memory=pin_memory)
-    valid_loader = DataLoader(ImagePreprocessor(val_image_paths, val_labels,
-                                                channels_mode="L", return_study_id=return_study_id),
-                              batch_size=16, shuffle=False, num_workers=NUM_WORKERS, pin_memory=pin_memory)
+    if return_train_loader:
+        print("Creating training dataloader...")
+        training_loader = DataLoader(ImagePreprocessor(train_image_paths, train_labels,
+                                     channels_mode="L", return_study_id=return_study_id),
+                                        batch_size=16, shuffle=True,
+                                        num_workers=NUM_WORKERS, pin_memory=pin_memory)
+    if return_val_loader:
+        print("Creating validation dataloader...")
+        valid_loader = DataLoader(ImagePreprocessor(val_image_paths, val_labels,
+                                  channels_mode="L", return_study_id=return_study_id),
+                                        batch_size=16, shuffle=False,
+                                        num_workers=NUM_WORKERS, pin_memory=pin_memory)
 
     return training_loader, valid_loader
