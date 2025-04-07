@@ -217,6 +217,9 @@ def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH):
         FileNotFoundError: If the CSV file does not exist.
         ValueError: If csv_file is neither a DataFrame nor a string.
     """
+    if not os.path.exists(image_dir):
+        print(f"No valid DATASET_PATH: {image_dir} found. Check Environment variable.")
+        raise FileNotFoundError(f"Image directory {image_dir} does not exist.")
     # Check if csv_file is a DataFrame or a string
     if isinstance(csv_file, pd.DataFrame):
         # If it's a DataFrame, use it directly
