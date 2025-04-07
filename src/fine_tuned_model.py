@@ -195,14 +195,14 @@ class SwinMIMICClassifier(nn.Module):
             layers_to_unblock (int): Number of transformer blocks to unblock for training.
         """
 
-        self.__unblock_layers(layers_to_unblock)
+        self._unblock_layers(layers_to_unblock)
 
         # List all parameters and their requires_grad status (whether they are trainable)
         for name, param in self.swin_model.named_parameters():
             print(f"{name}: requires_grad = {param.requires_grad}")
 
-        optimizer = self.__create_optimizer(layers_to_unblock, learning_rate_classifier, learning_rate_swin,
-                                            optimizer_param)
+        optimizer = self._create_optimizer(layers_to_unblock, learning_rate_classifier, learning_rate_swin,
+                                           optimizer_param)
 
         # Binary Cross-Entropy for multi-label classification
         loss_fn = loss_fn_param
@@ -233,7 +233,7 @@ class SwinMIMICClassifier(nn.Module):
 
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss:.4f}")
 
-    def __create_optimizer(self, layers_to_unblock, learning_rate_classifier, learning_rate_swin, optimizer_param):
+    def _create_optimizer(self, layers_to_unblock, learning_rate_classifier, learning_rate_swin, optimizer_param):
         # Define two parameter groups with different learning rates
         # Group 1: Swin Transformer layers
         # Group 2: Classifier head
@@ -248,7 +248,7 @@ class SwinMIMICClassifier(nn.Module):
             optimizer = optimizer_param
         return optimizer
 
-    def __unblock_layers(self, layers_to_unblock):
+    def _unblock_layers(self, layers_to_unblock):
         # Freeze all layers initially
         for param in self.swin_model.parameters():
             param.requires_grad = False
