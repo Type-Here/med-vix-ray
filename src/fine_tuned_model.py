@@ -342,8 +342,12 @@ class SwinMIMICClassifier(nn.Module):
             raise FileNotFoundError(f"Model file not found: {path}")
 
         # Load the src state
-        self.swin_model.load_state_dict(torch.load(path))
+        self.swin_model.load_state_dict(
+            torch.load(path,
+                       map_location="cuda" if torch.cuda.is_available() else "cpu")
+        )
         print(f"Model loaded from {path}")
+        return self
 
 
 if __name__ == "__main__":
