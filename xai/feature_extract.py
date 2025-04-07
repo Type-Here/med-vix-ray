@@ -225,7 +225,9 @@ def __extract_heatmap_features_single_map(att_map, threshold=SIMILARITY_THRESHOL
               - position: [x_min, x_max, y_min, y_max] bounding box of the activated area.
     """
     # Ensure the attention map is a float32 array.
-    att_map = att_map.astype(np.float32)
+    att_map = att_map.cpu().numpy().astype(np.float32)
+    # or keep pyTorch
+    # att_map = att_map.float()
 
     # If the map's max value is above 1, normalize to [0,1].
     max_val = np.max(att_map)
@@ -353,15 +355,15 @@ def compute_sign_bias(graph_json, num_diseases):
     bias = np.zeros(num_diseases, dtype=np.float32)
 
     # Iterate over edges of type 'finding'.
-    for edge in graph_json["edges"]:
-        if edge["type"] == "finding":
+    for edge in graph_json["links"]:
+        if edge["relation"] == "finding":
             disease_idx = int(edge["source"])  # disease index
             sign_idx = int(edge["target"])  # sign index
             weight = edge.get("weight", 1.0)
             # Find the corresponding sign node in graph_json["nodes"].
             # We assume that sign nodes have an attribute "type"=="sign"
             for node in graph_json["nodes"]:
-                if node.get("type") == "sign" and int(node["id"]) == sign_idx:
+                if node.get("relation") == "sign" and int(node["id"]) == sign_idx:
                     similarity = node.get("similarity", 1.0)
                     # Accumulate the contribution.
                     bias[disease_idx] += weight * similarity
