@@ -192,3 +192,6 @@ ontology/scispacy/nlp_tests/*
 
 # Ignore gcloud functions
 gcloud/*
+
+# Ignore ner - graph sign comparison files and directories
+ontology/report_keywords/*
