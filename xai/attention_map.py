@@ -60,7 +60,7 @@ class AttentionMap:
             Grad-CAM does not support batch input!
         """
         # Get the target layer for Grad-CAM (using the projection of the last attention block)
-        target_layer = model.swin.layers[-1].blocks[-1].attn
+        target_layer = model.layers[-1].blocks[-1].attn
         self.grad_cam = LayerGradCam(model, target_layer.proj)
         self.generate_attention_map = self.__generate_attention_map_grad_cam
 
@@ -70,7 +70,7 @@ class AttentionMap:
         Note:
             The CDAM method supports batch input also!
         """
-        self.cdam = LayerAttribution(model, model.swin.layers[-1].blocks[-1].attn.proj)
+        self.cdam = LayerAttribution(model, model.layers[-1].blocks[-1].attn.proj)
         self.generate_attention_map = self.__generate_attention_map_cdam
 
     # ============== GRAD-CAM =================
@@ -122,6 +122,10 @@ class AttentionMap:
     def __extract_attention_cdam_single_image(self, model, image_tensor, layer_num=-1):
         """
         Extract attention weights from a specific layer of Swin V2 (CDAM).
+        Note:
+            On model.layers[layer_num].blocks[-1].attn:
+            It expects attn_weights attribute to be present,
+            if doesn't exist yet, ensure to create a hook in init of the model.
         Args:
             model: Pre-trained Swin V2 model.
             image_tensor: Pre-processed image tensor (e.g., shape (1, 1, 256, 256)).
@@ -136,9 +140,10 @@ class AttentionMap:
         model.eval()
 
         # 2. Get the attention weights from the specified layer.
-        # Retrieve attention weights using a custom method (assumes get_attn() exists)
-        transformer_layer = model.swin.layers[layer_num].blocks[-1].attn.get_attn()
-        print("Layer Obtained:", transformer_layer)
+        # See Method Note for info
+        attn = model.layers[layer_num].blocks[-1].attn
+        transformer_layer = attn.attn_weights
+        #print("Layer Obtained:", transformer_layer)
 
         # 3. Run a forward pass in no_grad mode to ensure attention weights are computed.
         with torch.no_grad():
