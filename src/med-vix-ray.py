@@ -6,7 +6,7 @@ import numpy as np
 
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
     MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, \
-    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH
+    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
 
@@ -77,24 +77,29 @@ def _compute_feature_vector(features, keys=None):
     # Convert the list to a tensor. Optionally, you can set the data type.
     return torch.tensor(feature_list, dtype=torch.float32)
 
+
 def build_adjacency_matrix(graph_json, num_diseases, num_signs, scale_corr=1.0, scale_find=0.7):
+    # Offset for sign node IDs in the graph
+    delta_disease_sign_ids = 7
+    print(f"Building adjacency matrix for {num_diseases} diseases and {num_signs} signs.")
+
     # Initialize the blocks with float32 type.
     matr_dd = np.zeros((num_diseases, num_diseases), dtype=np.float32)  # disease-disease
     matr_ds = np.zeros((num_diseases, num_signs), dtype=np.float32)  # disease-sign
 
     # Process each edge in the JSON
-    for edge in graph_json["edges"]:
+    for edge in graph_json["links"]:
         weight = edge.get("weight", 1.0)
-        if edge["type"] == "correlation":
+        if edge["relation"] == "correlation":
             i = int(edge["source"])  # disease index
             j = int(edge["target"])  # disease index
             # Scale correlation edges
             matr_dd[i, j] = weight * scale_corr
             matr_dd[j, i] = weight * scale_corr  # if undirected
-        elif edge["type"] == "finding":
+        elif edge["relation"] == "finding":
             # Assume the source is a disease and target is a sign node.
             i = int(edge["source"])  # disease index
-            k = int(edge["target"])  # sign index
+            k = int(edge["target"]) - delta_disease_sign_ids - num_signs  # sign index
             matr_ds[i, k] = weight * scale_find
 
     matr_sd = matr_ds.T  # sign-to-disease (transpose)
@@ -115,12 +120,9 @@ def build_adjacency_matrix(graph_json, num_diseases, num_signs, scale_corr=1.0, 
 
 
 class GraphAttentionBias(nn.Module):
-    def __init__(self, alpha=ALPHA_GRAPH, ner_ground_truth=None):
+    def __init__(self, alpha=ALPHA_GRAPH):
         super(GraphAttentionBias, self).__init__()
         self.alpha = nn.Parameter(torch.tensor(alpha, dtype=torch.float32))  # or fix as a hyperparameter
-
-        # Placeholder for ground truth data
-        self.ner_ground_truth = ner_ground_truth # TODO: load this from a file or database
 
     def forward(self, attn_scores, graph_adj_matrix):
         # attn_scores: [B, H, N, N], graph_adj_matrix: [N, N]
@@ -129,104 +131,12 @@ class GraphAttentionBias(nn.Module):
         modified_scores = attn_scores / (attn_scores.shape[-1]**0.5) + self.alpha * g_expanded
         return torch.softmax(modified_scores, dim=-1)
 
-    def update_edge_weights_with_ground_truth(self, graph_json, study_id, labels):
-        """
-        Update the weights of 'finding' edges in the graph using ground truth information from reports.
-
-        For each finding edge (connecting a disease node to a sign node), update its weight based on:
-          - If the ground truth for the current study indicates the sign is present (polarity = 1),
-            use the ground truth similarity value s_gt.
-          - If the ground truth indicates a negative finding (polarity = 0) or the sign is not mentioned,
-            update the weight toward 0.
-
-        The new weight is computed using a weighted moving average:
-            w_new = (c * w_old + s_new) / (c + 1)
-
-        Args:
-            graph_json (dict): Graph data with "nodes" and "edges". Each sign node must have "id", "type"=="sign",
-                               and stored "features" (a dict).
-            study_id (str): The identifier for the current study, used to look up ground truth.
-            labels (list): Each position is the value of the node for a specific xr, 1.0 if present, 0.0 if not present.
-                The order of the labels is defined by the order of MIMIC_LABELS list in settings.py.
-
-        Returns:
-            dict: Updated graph_json with modified weights for finding edges.
-        """
-        # Convert extracted features to a feature vector (using your helper function).
-        # Not used but could be an option.
-        # new_feat_vec = _compute_feature_vector(extracted_features, keys_order)  # numpy array
-
-        # Look up ground truth for the current study.
-        # Assume ground_truth is available (e.g., a global variable) with structure:
-        # { study_id:
-        #   { "sign_node_id": [s_gt, polarity],
-        #       ...,
-        #     "dicom_ids": [dicom_id1, dicom_id2, ...],
-        #   }, ...
-        # }
-        gt_entry = self.ner_ground_truth.get(study_id, {})  # Returns a dict for this study.
-        positive_labels = []
-        for label in labels:
-            if label > 0.0:
-                # If label is positive, get its position in the labels list.
-                label_name = MIMIC_LABELS[labels.index(label)]
-                positive_labels.append(MIMIC_LABELS_MAP_TO_GRAPH_IDS[label_name])
-
-        for edge in graph_json["edges"]:
-            if edge["type"] == "correlation":
-                edge["source"] = int(edge["source"])  # disease node index
-                edge["target"] = int(edge["target"])  # disease node index
-
-                # If both disease nodes are present in the positive labels,
-                # update the weight positively.
-                if edge["source"] in positive_labels and edge["target"] in positive_labels:
-                    polarity = 1.0
-                else:
-                    polarity = 0.2
-
-                weight_old = edge.get("weight", 1.0)
-                count = edge.get("update_count", 0)
-
-                # Compute the new weight with weighted moving average.
-                weight_new = (count * weight_old + polarity) / (count + 1)
-                edge["weight"] = weight_new
-                edge["update_count"] = count + 1
-
-
-            elif edge["type"] == "finding":
-                disease_idx = int(edge["source"])  # disease node index
-
-                # If the disease node is not in the positive labels, skip this edge.
-                if disease_idx not in positive_labels:
-                    continue
-
-                sign_idx = int(edge["target"])  # sign node index
-                weight_old = edge.get("weight", 1.0)
-                count = edge.get("update_count", 0)
-
-                # Determine the new similarity value s_new.
-                # Check if the ground truth indicates anything for this sign node.
-                if str(sign_idx) in gt_entry:
-                    s_gt, polarity = gt_entry[str(sign_idx)]
-                    s_new = s_gt if polarity == 1 else 0.2
-                else:
-                    # If not mentioned, assume the sign was not observed.
-                    # TODO: Check this value
-                    s_new = 0.4
-
-                # Compute the new weight with weighted moving average.
-                weight_new = (count * weight_old + s_new) / (count + 1)
-                edge["weight"] = weight_new
-                edge["update_count"] = count + 1
-
-        return graph_json
-
 
 # ========================= GRAPH ATTENTION MODULE =========================
 
 
 class GraphAttentionModule(nn.Module):
-    def __init__(self, num_classes, d_k, graph_matrix=None):
+    def __init__(self, num_classes, d_k, graph_matrix=None, ner_ground_truth=None):
         """
         Initialize the graph attention module.
 
@@ -235,10 +145,14 @@ class GraphAttentionModule(nn.Module):
             d_k (int): Dimension for the key/query/value embeddings.
             graph_matrix (np.array or torch.Tensor, optional): The pre-computed graph matrix (shape: num_classes x num_classes).
                 If None, defaults to a zero matrix.
+            ner_ground_truth (dict): Ground truth data for NER. This should be a dictionary
         """
         super(GraphAttentionModule, self).__init__()
         self.num_classes = num_classes
         self.d_k = d_k
+
+        # Placeholder for ground truth data
+        self.ner_ground_truth = ner_ground_truth  # TODO: load this from a file or database
 
         # Learnable projection for each class.
         self.W_e = nn.Parameter(torch.randn(num_classes, d_k))
@@ -277,6 +191,100 @@ class GraphAttentionModule(nn.Module):
         # Project each aggregated embedding to a scalar bias.
         bias = self.W_out(aggr).squeeze(-1)
         return bias
+
+    def update_edge_weights_with_ground_truth(self, graph_json, study_id, gt_labels):
+        """
+        Update the weights of 'finding' edges in the graph using ground truth information from reports.
+
+        For each finding edge (connecting a disease node to a sign node), update its weight based on:
+          - If the ground truth for the current study indicates the sign is present (polarity = 1),
+            use the ground truth similarity value s_gt.
+          - If the ground truth indicates a negative finding (polarity = 0) or the sign is not mentioned,
+            update the weight toward 0.
+
+        The new weight is computed using a weighted moving average:
+            w_new = (c * w_old + s_new) / (c + 1)
+
+        Args:
+            graph_json (dict): Graph data with "nodes" and "edges". Each sign node must have "id", "type"=="sign",
+                               and stored "features" (a dict).
+            study_id (str): The identifier for the current study, used to look up ground truth.
+            gt_labels (list): Each position is the value of the node for a specific xr, 1.0 if present, 0.0 if not present.
+                The order of the labels is defined by the order of MIMIC_LABELS list in settings.py.
+
+        Returns:
+            dict: Updated graph_json with modified weights for finding edges.
+        """
+        # Convert extracted features to a feature vector (using your helper function).
+        # Not used but could be an option.
+        # new_feat_vec = _compute_feature_vector(extracted_features, keys_order)  # numpy array
+
+        # Look up ground truth for the current study.
+        # Assume ground_truth is available (e.g., a global variable) with structure:
+        # { study_id:
+        #   { "sign_node_id": [s_gt, polarity],
+        #       ...,
+        #     "dicom_ids": [dicom_id1, dicom_id2, ...],
+        #   }, ...
+        # }
+        gt_entry = self.ner_ground_truth.get(study_id, {})  # Returns a dict for this study.
+        positive_labels = []
+
+        # gt_labels is a list of 0.0 or 1.0 from ground truth
+        for i, gt_label in enumerate(gt_labels):
+            if gt_label > 0.0:
+                # If label is positive, get its position in the labels list.
+                label_name = MIMIC_LABELS[i]
+                positive_labels.append(MIMIC_LABELS_MAP_TO_GRAPH_IDS[label_name])
+
+        for edge in graph_json["links"]:
+            if edge["relation"] == "correlation":
+                edge["source"] = int(edge["source"])  # disease node index
+                edge["target"] = int(edge["target"])  # disease node index
+
+                # If both disease nodes are present in the positive labels,
+                # update the weight positively.
+                if edge["source"] in positive_labels and edge["target"] in positive_labels:
+                    polarity = 1.0
+                else:
+                    polarity = 0.2
+
+                weight_old = edge.get("weight", 1.0)
+                count = edge.get("update_count", 0)
+
+                # Compute the new weight with weighted moving average.
+                weight_new = (count * weight_old + polarity) / (count + 1)
+                edge["weight"] = weight_new
+                edge["update_count"] = count + 1
+
+
+            elif edge["relation"] == "finding":
+                disease_idx = int(edge["source"])  # disease node index
+
+                # If the disease node is not in the positive labels, skip this edge.
+                if disease_idx not in positive_labels:
+                    continue
+
+                sign_idx = int(edge["target"])  # sign node index
+                weight_old = edge.get("weight", 1.0)
+                count = edge.get("update_count", 0)
+
+                # Determine the new similarity value s_new.
+                # Check if the ground truth indicates anything for this sign node.
+                if str(sign_idx) in gt_entry:
+                    s_gt, polarity = gt_entry[str(sign_idx)]
+                    s_new = s_gt if polarity == 1 else 0.2
+                else:
+                    # If not mentioned, assume the sign was not observed.
+                    # TODO: Check this value
+                    s_new = 0.4
+
+                # Compute the new weight with weighted moving average.
+                weight_new = (count * weight_old + s_new) / (count + 1)
+                edge["weight"] = weight_new
+                edge["update_count"] = count + 1
+
+        return graph_json
 
 
 # ========================= GRAPH NUDGER =========================
@@ -390,7 +398,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
     and—after a given number of epochs—incorporates the graph information into the logits.
     """
     def __init__(self, num_classes=len(MIMIC_LABELS), graph_json=None,
-                 graph_integration_start_epoch=EPOCH_GRAPH_INTEGRATION, d_k=64, ner_ground_truth=NER_GROUND_TRUTH):
+                 graph_integration_start_epoch=EPOCH_GRAPH_INTEGRATION, d_k=64, ner_ground_truth_path=NER_GROUND_TRUTH):
         """
         Args:
             num_classes (int): Number of classes.
@@ -421,7 +429,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # Total epochs; useful for calculating activation timing.
         self.total_epochs = NUM_EPOCHS
         # ner_ground_truth: save as variable to be used in the graph attention bias module.
-        self.ner_ground_truth = ner_ground_truth
+        # This is a dictionary with the ground truth for each study_id.
+        if ner_ground_truth_path is None:
+            raise ValueError("ner_ground_truth cannot be None.")
+        with open(ner_ground_truth_path, 'r') as nerf:
+            self.ner_ground_truth = json.load(nerf)
 
         # Initialize graph information.
         # Expecting graph_json to contain "nodes" and "edges". For our vocabulary:
@@ -438,6 +450,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             # Save the computed adjacency matrix into the graph dictionary for later use.
             self.graph_matrix = graph_matrix
 
+        # Register the forward hook on the target attention module.
+        target_attn_module = self.swin_model.layers[-1].blocks[-1].attn
+        target_attn_module.register_forward_hook(self._save_attn_hook)
+
         # Initialize the AttentionMap module.
         # This module will extract attention maps from the second last layer (before the classifier head)
         # using techniques such as cdam (or gradcam) to later compare with sign node statistics.
@@ -446,7 +462,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # Initialize the GraphAttentionModule.
         # This module uses the (normalized) adjacency matrix (from both correlation and finding edges)
         # to compute a bias that will be injected into transformer layers.
-        self.graph_attention_module = GraphAttentionModule(num_classes=num_classes, d_k=d_k, graph_matrix=self.graph_matrix)
+        self.graph_attention_module = GraphAttentionModule(num_classes=num_classes, d_k=d_k,
+                                                           graph_matrix=self.graph_matrix,
+                                                           ner_ground_truth=self.ner_ground_truth)
 
         # Initialize the GraphNudger module.
         # This module is responsible for the final nudging operation on the classifier head:
@@ -454,6 +472,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self.graph_nudger = GraphNudger(eta=0.01)  # nudging learning rate
 
         # Note: self.classifier is already defined in the parent class (SwinMIMICClassifier).
+
+    def _save_attn_hook(self, module, _, output):
+        # Assume that output contains the attention weights.
+        # If output is a tuple, adjust accordingly.
+        module.attn_weights = output  # or output[1] if output is a tuple.
 
     def compute_graph_bias(self, base_logits):
         """
@@ -508,7 +531,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             graph_adj_matrix = torch.tensor(graph_adj_matrix, dtype=torch.float32,
                                             device=self.swin_model.patch_embed.proj.weight.device)
 
-        graph_bias_module = GraphAttentionBias(alpha=ALPHA_GRAPH, ner_ground_truth=self.ner_ground_truth)
+        graph_bias_module = GraphAttentionBias(alpha=ALPHA_GRAPH)
         # Assume self.swin_model.layers is a list of layers, each with blocks that have an "attn" module.
         for layer_idx, layer in enumerate(self.swin_model.layers):
             for block_idx, block in enumerate(layer.blocks):
@@ -610,7 +633,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # 8. Return the final logits.
         return final_logits
 
-    def __save_classifier_grad(self, grad):
+    def _save_classifier_grad(self, grad):
         """
         Hook function to capture the gradient of the classifier output.
         This function stores the gradient in self.classifier_grad.
@@ -648,11 +671,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self.is_training = True
 
         # Unfreeze the specified layers in the transformer.
-        self.__unblock_layers(layers_to_unblock)
+        self._unblock_layers(layers_to_unblock)
 
         # Define optimizer with parameter groups.
-        optimizer = self.__create_optimizer(layers_to_unblock, learning_rate_swin,
-                                            learning_rate_classifier, optimizer_param)
+        optimizer = self._create_optimizer(layers_to_unblock, learning_rate_swin,
+                                           learning_rate_classifier, optimizer_param)
         loss_fn = loss_fn_param
 
         for epoch in range(num_epochs):
@@ -695,7 +718,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 for i, study_id in enumerate(study_ids):
                     # Update the graph with the new weights.
                     # This function updates the weights of the edges in the graph based on the classifier logits.
-                    self.graph = self.graph_nudger.update_edge_weights_with_ground_truth(
+                    self.graph = self.graph_attention_module.update_edge_weights_with_ground_truth(
                         self.graph, study_id, labels[i].cpu().numpy()
                     )
 
@@ -766,8 +789,12 @@ if __name__ == "__main__":
         Main function to run the Med-ViX-Ray model training or evaluation.
     """
     print("Starting Med-ViX-Ray model main...")
+    print("Loading Graph JSON...")
+    # Load the graph JSON file
+    with open(MANUAL_GRAPH, 'r') as file:
+        data_graph_json = json.load(file)
     # Example usage
-    med_model = SwinMIMICGraphClassifier()
+    med_model = SwinMIMICGraphClassifier(graph_json=data_graph_json)
     print("Model initialized.")
     # You can now train the model using the train_model method.
     # Example: model.train_model(train_loader)
@@ -785,7 +812,7 @@ if __name__ == "__main__":
         exit(0)
 
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
-    training_loader, valid_loader = general.get_dataloaders()
+    training_loader, valid_loader = general.get_dataloaders(return_study_id=True)
 
     # Train the model
     print("Starting training of Med-ViX-Ray...")
