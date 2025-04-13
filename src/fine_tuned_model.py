@@ -364,7 +364,7 @@ if __name__ == "__main__":
     # Load Model if exists
     model_path = os.path.join(SAVE_DIR, "fine_tuned_model.pth")
 
-    if not general.model_option(model_path, ft_model):
+    if not general.basic_menu_model_option(model_path, ft_model):
         exit(0)
 
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.

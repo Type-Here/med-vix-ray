@@ -24,7 +24,7 @@ def menu():
     return choice
 
 
-def model_option(model_path, model_obj):
+def basic_menu_model_option(model_path, model_obj):
     """
     Check if a model exists at the specified path. If it does, prompt the user to load it or train a new one.
     If the model does not exist, prompt the user to train a new one.
