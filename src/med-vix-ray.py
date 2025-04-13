@@ -6,7 +6,7 @@ import numpy as np
 
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
     MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, \
-    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH
+    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH, INJECT_BIAS_FROM_THIS_LAYER
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
 
@@ -403,8 +403,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         Args:
             num_classes (int): Number of classes.
             graph_json (dict): JSON structure holding your graph. If None, an empty graph is created.
-            d_k (int): Dimension for the key/query/value embeddings.
             graph_integration_start_epoch (int): After which epoch to incorporate graph info.
+            device(torch.device): set torch device for cpu or cuda computations. If left to none defaults to 'cpu'
+            ner_ground_truth_path (str): Path to the ground truth file for NER.
+            If None defaults to swin_model.patch_embed.num_patches
+
         """
         super(SwinMIMICGraphClassifier, self).__init__(num_classes=num_classes)
 
@@ -469,6 +472,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # Initialize the GraphNudger module.
         # This module is responsible for the final nudging operation on the classifier head:
         # it compares attention-derived features with stored sign node statistics and computes a weight update.
+        print("Initializing graph nudger...")
         self.graph_nudger = GraphNudger(eta=0.01)  # nudging learning rate
 
         # Note: self.classifier is already defined in the parent class (SwinMIMICClassifier).
@@ -523,6 +527,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             graph_adj_matrix (np.array): The adjacency matrix of the graph.
             use_graph_guidance (bool): Whether to use graph guidance.
         """
+        # For example, inject bias only in layers with index >= threshold_layer.
+        threshold_layer = INJECT_BIAS_FROM_THIS_LAYER  # TODO: adjust based on training results
+
         if not use_graph_guidance:
             return  # do nothing
 
@@ -534,6 +541,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         graph_bias_module = GraphAttentionBias(alpha=ALPHA_GRAPH)
         # Assume self.swin_model.layers is a list of layers, each with blocks that have an "attn" module.
         for layer_idx, layer in enumerate(self.swin_model.layers):
+            # Only inject bias in layers >= threshold_layer.
+            if layer_idx < threshold_layer:
+                continue
             for block_idx, block in enumerate(layer.blocks):
                 original_forward = block.attn.forward
 
@@ -689,6 +699,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             for images, labels, study_ids in train_loader:
                 optimizer.zero_grad()
+                images = images.to(self.device)
+                labels = labels.to(self.device)
+                study_ids = study_ids.to(self.device)
 
                 # Reset the classifier gradient to None before each batch.
                 self.classifier_grad = None
@@ -769,8 +782,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         if path is None:
             path = os.path.join(MODELS_DIR, 'med_vixray_graph.json')
-        with open(path, 'w') as file:
-            json.dump(self.graph, file)
+        with open(path, 'w') as g_file:
+            json.dump(self.graph, g_file)
 
     def save_all(self, path=None):
         """
@@ -793,8 +806,13 @@ if __name__ == "__main__":
     # Load the graph JSON file
     with open(MANUAL_GRAPH, 'r') as file:
         data_graph_json = json.load(file)
-    # Example usage
-    med_model = SwinMIMICGraphClassifier(graph_json=data_graph_json)
+
+    # Check for device
+    t_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    is_cuda = torch.cuda.is_available()
+
+    # Init Model
+    med_model = SwinMIMICGraphClassifier(graph_json=data_graph_json, device=t_device).to(t_device)
     print("Model initialized.")
     # You can now train the model using the train_model method.
     # Example: model.train_model(train_loader)
@@ -805,11 +823,16 @@ if __name__ == "__main__":
     if not os.path.exists(SAVE_DIR):
         os.makedirs(SAVE_DIR)
 
+    # If it still doesn't exist exit, so avoid errors after waiting all training
+    if not os.path.exists(SAVE_DIR):
+        print("Unable to create save dir. Exiting...")
+        exit(1)
+
     # Load Model if exists
     model_path = os.path.join(SAVE_DIR, "med_model.pth")
 
-    if not general.model_option(model_path, med_model):
-        exit(0)
+    #if not general.basic_menu_model_option(model_path, med_model):
+    #    exit(0)
 
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
     training_loader, valid_loader = general.get_dataloaders(return_study_id=True)
@@ -836,6 +859,7 @@ if __name__ == "__main__":
         file.write(str(metrics_dict))
     print(f"Model Metrics saved to {metrics_file}")
 
+    print("Now saving the model architecture to a file...")
     # Save the model architecture to a file
     model_architecture_file = os.path.join(SAVE_DIR, "model_architecture.txt")
     with open(model_architecture_file, 'w') as f:
