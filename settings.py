@@ -77,6 +77,7 @@ TEST_SPLIT = 0.1 # Ratio of testing data
 
 # ====== PARAMETERS FOR GRAPH WEIGHTS TRAINING ======
 EPOCH_GRAPH_INTEGRATION = NUM_EPOCHS // 5 # Number of epochs for graph integration (Default: 20%)
+INJECT_BIAS_FROM_THIS_LAYER = 2 # Number of which layer to start injecting bias from
 
 # For the available Labels Correlation Edges in graph: if correlation edge is present and: (label = pathology)
 # - the pathologies are both present in a specific image (1.0 both) update the weight of +positive_weight_corr;
