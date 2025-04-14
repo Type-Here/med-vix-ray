@@ -30,14 +30,11 @@ def _compute_batch_features_vectors(features_dict, keys_order=None):
     Returns:
         torch.Tensor: Concatenated features tensor of shape [B, f_dim].
     """
-    if keys_order is not None:
-        # Gather the feature values; if a key is missing, use 0.0 as default.
-        feature_list = [features_dict.get(k, 0.0) for k in keys_order]
-    else:
-        # If no keys are provided, use the order of the features in the dictionary.
-        feature_list = [features_dict.get(k, 0.0) for k in features_dict.keys()]
-
-    for key in keys_order:
+    # Gather the feature values; if a key is missing, use 0.0 as default.
+    # If no keys are provided, use the order of the features in the dictionary.
+    keys = keys_order if keys_order is not None else list(features_dict.keys())
+    feature_list = []
+    for key in keys:
         # Ensure each feature tensor has shape [B, 1]
         tensor_val = (features_dict[key])
         if tensor_val.ndim == 1:  # reshape to [B, 1]
