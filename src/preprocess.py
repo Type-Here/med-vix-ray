@@ -68,7 +68,22 @@ class ImagePreprocessor(Dataset):
         :returns: tuple(torch.Tensor, torch.Tensor): Preprocessed image tensor; List of labels for the image.
         :rtype: tuple
     """
-    def __init__(self, image_paths, image_labels, transform = None, image_size=(256, 256), channels_mode="RGB", return_study_id=False):
+    def __init__(self, image_paths, image_labels, transform = None, image_size=(256, 256),
+                 channels_mode="RGB", return_study_id=False, check_for_existence=False):
+        """
+        Initialize the dataset with image paths, labels and transformations.
+        Parameters:
+            image_paths (list): List of paths to the images.
+            image_labels (dict): Dictionary with image name for key, and list of labels for value.
+            Should be already aligned with the image_paths.
+            transform (callable, optional): Optional transform to be applied on a sample.
+            image_size (tuple): Desired output size of the image.
+            channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
+            return_study_id (bool): If True, the dataloader will return the study_id along with the image and label in the tuple.
+            check_for_existence (bool): If True, check if the image paths exist and remove them from the dataset if not.
+            It defaults to False in order to avoid unnecessary checks.
+
+        """
 
         self.image_size = image_size
         self.image_labels = image_labels
@@ -82,6 +97,15 @@ class ImagePreprocessor(Dataset):
         self.return_study_id = return_study_id
 
         # Check if the image paths exist
+        if check_for_existence:
+            self.__check_image_existence()
+            if len(self.image_paths) == 0:
+                print("No images found in the dataset. Check the dataset folder or code.")
+                raise FileNotFoundError("No images found in the dataset.")
+            else:
+                print(f"Found {len(self.image_paths)} images in the dataset.")
+
+    def __check_image_existence(self):
         for img in self.image_paths:
             if not os.path.exists(img):
                 print(f"Image path does not exist: {img}. Removing from dataset.")
