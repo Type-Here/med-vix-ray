@@ -125,7 +125,7 @@ class AttentionMap:
         Note:
             On model.layers[layer_num].blocks[-1].attn:
             It expects attn_weights attribute to be present,
-            if doesn't exist yet, ensure to create a hook in init of the model.
+            if it doesn't exist yet, ensure to create a hook in init of the model.
         Args:
             model: Pre-trained Swin V2 model.
             image_tensor: Pre-processed image tensor (e.g., shape (1, 1, 256, 256)).
@@ -161,8 +161,8 @@ class AttentionMap:
         # 6. Use the input image dimensions for resizing.
         # Resize to match desired output size
         # Assume image_tensor shape is (B, C, H, W); use dimensions of the first image.
-        _, _, hei, wei = image_tensor.shape
-        new_size = (hei, wei)
+        _, _, hei, wi = image_tensor.shape
+        new_size = (int(wi), int(hei))
         attention_map = cv2.resize(attention_map, new_size)
 
         map_dst = np.zeros_like(attention_map, dtype=np.float32)
