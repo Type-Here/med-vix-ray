@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset
@@ -79,6 +81,17 @@ class ImagePreprocessor(Dataset):
 
         self.return_study_id = return_study_id
 
+        # Check if the image paths exist
+        for img in self.image_paths:
+            if not os.path.exists(img):
+                print(f"Image path does not exist: {img}. Removing from dataset.")
+                # Remove the image path from the list and its corresponding label
+                self.image_paths.remove(img)
+                # Assuming the image_labels dictionary is keyed by the image name
+                key = img.split("/")[-1].split(".")[0]
+                if key in self.image_labels:
+                    del self.image_labels[key]
+
     def __len__(self):
         return len(self.image_paths)
 
@@ -116,10 +129,3 @@ class ImagePreprocessor(Dataset):
 
 
 # =============================================
-
-
-if __name__ == "__main__":
-    # Example usage
-    img_path = "/path/to/sample_image.jpg"  # Replace with your image path
-    image_tensor = preprocess_image(img_path)
-    print(f"Shape immagine pre-processata: {image_tensor.shape}")  # Output: torch.Size([1, 3, 256, 256])
