@@ -139,15 +139,15 @@ class AttentionMap:
         # Ensure the model is in evaluation mode
         model.eval()
 
-        # 2. Get the attention weights from the specified layer.
+        # 2. Run a forward pass in no_grad mode to ensure attention weights are computed.
+        with torch.no_grad():
+            _ = model(image_tensor)
+
+        # 3. Get the attention weights from the specified layer.
         # See Method Note for info
         attn = model.layers[layer_num].blocks[-1].attn
         transformer_layer = attn.attn_weights
         #print("Layer Obtained:", transformer_layer)
-
-        # 3. Run a forward pass in no_grad mode to ensure attention weights are computed.
-        with torch.no_grad():
-            _ = model(image_tensor)
 
         # 4. Restore the model's original training mode.
         if prev_mode:
@@ -155,19 +155,29 @@ class AttentionMap:
 
         # 5. Convert attention weights to a NumPy array and average over heads.
         attention_map = transformer_layer.cpu().detach().numpy()
+        # Caso standard Swin V2: [1, 64, 1024]
+        num_heads, tokens, num_windows = attention_map.shape
+        # Remove batch and head
+        # shape: [1, 1, 64, 1024] → [64, 1024]
+        attention_map = attention_map[0, 0]
         # Average over all heads
         attention_map = np.mean(attention_map, axis=0) # TODO Check if mean is the best option
 
-        # 6. Use the input image dimensions for resizing.
+        # 6. Reconstruct grid of windows [32, 32]
+        win_grid = int(np.sqrt(num_windows))
+        assert win_grid * win_grid == num_windows, f"Non quadrato: {num_windows}"
+        att_map = attention_map.reshape((win_grid, win_grid))  # [32, 32]
+
+        # 7. Use the input image dimensions for resizing.
         # Resize to match desired output size
         # Assume image_tensor shape is (B, C, H, W); use dimensions of the first image.
         _, _, hei, wi = image_tensor.shape
         new_size = (int(wi), int(hei))
-        attention_map = cv2.resize(attention_map, new_size)
+        att_map_resized = cv2.resize(att_map, new_size, interpolation=cv2.INTER_CUBIC)
 
-        map_dst = np.zeros_like(attention_map, dtype=np.float32)
-        # 7. Normalize the attention map to the range [0, 1].
-        res_map = cv2.normalize(attention_map, map_dst, 0, 1, cv2.NORM_MINMAX)
+        # 8. Normalize the attention map to the range [0, 1].
+        map_dst = np.zeros_like(att_map_resized, dtype=np.float32)
+        res_map = cv2.normalize(att_map_resized, map_dst, 0, 1, cv2.NORM_MINMAX)
 
         # Do not store the result in self.map to avoid side effects in concurrent calls.
         # self.map = res_map
