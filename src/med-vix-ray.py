@@ -743,8 +743,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 keys_order=self.stats_keys,
                 graph=self.graph,
                 num_diseases=len(MIMIC_LABELS),
-                grad_output=grad_output_batch
+                grad_output_batch=grad_output_batch
             )
+
+            # Transfer the update vector to the same device as the classifier logits.
+            update_vector = update_vector.to(self.device)
+
             # 7a. Then final logits become:
             final_logits = self.classifier_logits + update_vector  # where classifier_logits is [B, num_diseases]
         else:
