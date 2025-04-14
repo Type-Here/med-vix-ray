@@ -149,9 +149,10 @@ class GraphBiasAdapterConv(nn.Module):
                 if layer.bias is not None:
                     nn.init.constant_(layer.bias, 0)
 
-    def forward(self, g_matrix):  # G shape: [B, N, N]
-        g_matrix = g_matrix.unsqueeze(1)  # Add channel: [B, 1, N, N]
-        g_out = self.adapter(g_matrix)  # Paa to conv: [B, 1, N, N]
+    def forward(self, g_matrix):  # G shape: [B, N, N] or [B, H, N, N]
+        if g_matrix.dim() == 3:
+            g_matrix = g_matrix.unsqueeze(1)  # Add channel: [B, 1, N, N]
+        g_out = self.adapter(g_matrix)  # Apply conv
         return g_out.squeeze(1)  # Remove Channel: [B, N, N]
 
 # ========================= GRAPH ATTENTION BIAS =========================
@@ -179,18 +180,24 @@ class GraphAttentionBias(nn.Module):
         self._printed_debug = False  # Flag to control debug printing
 
     def forward(self, attn_scores, graph_adj_matrix):
-        # attn_scores: [B, H, N, N], graph_adj_matrix: [N, N]
-        ba, he, n, _ = attn_scores.shape
+        # If attn_scores is 3D, add a dimension to make it 4D
+        if attn_scores.dim() == 3:
+            attn_scores = attn_scores.unsqueeze(1)  # Now [B, 1, N, N]
+
+        # attn_scores: [B, H, N, M], graph_adj_matrix: [N, M]
+        ba, he, n_q, n_k = attn_scores.shape # a
 
         # Add batch dimension to the graph adjacency matrix if needed
         if graph_adj_matrix.dim() == 2:
             graph_adj_matrix = graph_adj_matrix.unsqueeze(0)  # → [1, N0, N0]
 
         # Expand the graph adjacency matrix to match the attention scores shape
-        g_expanded = graph_adj_matrix.unsqueeze(1)  # [1, 1, N0, N0]
+        if graph_adj_matrix.dim() == 3:  # [1, N0, N0]
+            g_expanded = graph_adj_matrix.unsqueeze(1)  # → [1, 1, N0, N0]
+        else:
+            g_expanded = graph_adj_matrix
 
-
-        g_resized = torch.nn.functional.interpolate(g_expanded, size=(n, n),
+        g_resized = torch.nn.functional.interpolate(g_expanded, size=(n_q, n_k),
                                                     mode='bilinear',align_corners=False)
         # Replicates the resized matrix across the batch dimension (ba),
         # resulting in a tensor of shape [B, 1, N, N]:
@@ -202,8 +209,8 @@ class GraphAttentionBias(nn.Module):
         # Debugging information only first time
         if not self._printed_debug:
             print(f"[GraphAttentionBias] attn_scores: {attn_scores.shape}")
-            print(f"[GraphAttentionBias] G_resized: {g_resized.shape}")
-            print(f"[GraphAttentionBias] G_adapted: {g_adapted.shape}")
+            print(f"[GraphAttentionBias] G_resized: {g_resized.shape} - Pre conv")
+            print(f"[GraphAttentionBias] G_adapted: {g_adapted.shape} - Post conv")
             self._printed_debug = True
 
         # Standard scaled dot-product attention factor:
