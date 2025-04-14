@@ -255,6 +255,6 @@ def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH):
         if os.path.exists(image_path):
             image_paths.append(image_path)
         else:
-            print(f"Image {image_path} does not exist.")
+            print(f"Image {image_path} does not exist. Not adding to the list.")
 
     return image_paths
