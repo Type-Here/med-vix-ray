@@ -423,8 +423,8 @@ class GraphNudger(nn.Module):
             # Initialize a bias vector for diseases (shape: [num_diseases]).
             bias_vec = np.zeros(num_diseases, dtype=np.float32)
             # Loop over each edge in the graph of type 'finding'.
-            for edge in graph["edges"]:
-                if edge["type"] == "finding":
+            for edge in graph["links"]:
+                if edge["relation"] == "finding":
                     disease_idx = int(edge["source"])  # disease node index
                     sign_idx = int(edge["target"])  # sign node index
                     weight = edge.get("weight", 1.0)
@@ -626,7 +626,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             #return _compute_feature_vector(features, keys=self.stats_keys)
 
             # If features is a batch, compute batch feature vectors.
-            return _compute_batch_features_vectors(features, keys_order=self.stats_keys)
+        return _compute_batch_features_vectors(features, keys_order=self.stats_keys)
 
     def __inject_graph_bias_in_transformer(self, graph_adj_matrix, use_graph_guidance):
         """
