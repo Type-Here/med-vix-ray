@@ -176,21 +176,41 @@ class GraphAttentionBias(nn.Module):
             raise ValueError("Conv value needed!")
         self.conv = conv
         self.d_k = d_k  # Dimension for the key/query/value embeddings
+        self._printed_debug = False  # Flag to control debug printing
 
     def forward(self, attn_scores, graph_adj_matrix):
         # attn_scores: [B, H, N, N], graph_adj_matrix: [N, N]
-        # Expand graph matrix to batch and head dims:
-        g_expanded = graph_adj_matrix.unsqueeze(0).unsqueeze(0)  # shape [1,1,N,N]
+        ba, he, n, _ = attn_scores.shape
 
-        target_size = attn_scores.shape[-1]  # e.g. 128
+        # Add batch dimension to the graph adjacency matrix if needed
+        if graph_adj_matrix.dim() == 2:
+            graph_adj_matrix = graph_adj_matrix.unsqueeze(0)  # → [1, N0, N0]
+
+        # Expand the graph adjacency matrix to match the attention scores shape
+        g_expanded = graph_adj_matrix.unsqueeze(1)  # [1, 1, N0, N0]
+
+
+        g_resized = torch.nn.functional.interpolate(g_expanded, size=(n, n),
+                                                    mode='bilinear',align_corners=False)
+        # Replicates the resized matrix across the batch dimension (ba),
+        # resulting in a tensor of shape [B, 1, N, N]:
+        g_resized = g_resized.expand(ba, -1, -1, -1)  # [B, 1, N, N]
+
+        # Call the convolutional layer to adapt the graph matrix to the attention scores:
+        g_adapted = self.conv(g_resized) # [B, N, N]
+
+        # Debugging information only first time
+        if not self._printed_debug:
+            print(f"[GraphAttentionBias] attn_scores: {attn_scores.shape}")
+            print(f"[GraphAttentionBias] G_resized: {g_resized.shape}")
+            print(f"[GraphAttentionBias] G_adapted: {g_adapted.shape}")
+            self._printed_debug = True
 
         # Standard scaled dot-product attention factor:
-        scaling = np.sqrt(self.d_k) # Note: If used, it should be passed as a parameter!
+        scaling = np.sqrt(self.d_k)
 
-        g_resized = torch.nn.functional.interpolate(g_expanded, size=(target_size, target_size),
-                                                    mode='bilinear',align_corners=False)
-        g_adapted = self.conv(g_resized)
-        modified_scores = attn_scores / (scaling ** 0.5) + self.alpha * g_adapted
+        # Modify the attention scores by adding the adapted graph matrix:
+        modified_scores = attn_scores / scaling + self.alpha * g_adapted.unsqueeze(1)  # [B, 1, N, N]
 
         # modified_scores = attn_scores / (attn_scores.shape[-1]**0.5) + self.alpha * g_resized
         return torch.softmax(modified_scores, dim=-1)
@@ -575,7 +595,6 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         Compute a refined graph bias using the GraphAttentionModule.
         """
         return self.graph_attention_module(base_logits)
-
 
     def __compute_feature_vector(self, features, keys=None):
         """
