@@ -155,8 +155,15 @@ class AttentionMap:
 
         # 5. Convert attention weights to a NumPy array and average over heads.
         attention_map = transformer_layer.cpu().detach().numpy()
-        # Caso standard Swin V2: [1, 64, 1024]
-        num_heads, tokens, num_windows = attention_map.shape
+        # Standard Swin V2: [1, 64, 1024]
+        shape = attention_map.shape
+        if len(shape) == 4:
+            _, num_heads, tokens, num_windows = shape
+        elif len(shape) == 3:
+            num_heads, tokens, num_windows = shape
+        else:
+            raise ValueError(f"Invalid attention map shape: {shape}")
+        # num_heads, tokens, num_windows = attention_map.shape
         # Remove batch and head
         # shape: [1, 1, 64, 1024] → [64, 1024]
         attention_map = attention_map[0, 0]
