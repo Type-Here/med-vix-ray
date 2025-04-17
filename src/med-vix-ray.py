@@ -518,6 +518,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self.is_graph_used = False
         # Flag for training mode.
         self.is_training = False
+        # Flag for Graph Nudger mode.
+        self.is_using_nudger = False
 
         # Epoch threshold to activate graph-based mechanisms (both transformer bias & final nudging).
         self.graph_integration_start_epoch = graph_integration_start_epoch
@@ -669,7 +671,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 block.attn.forward = new_forward
                 print(f"Injected graph bias into layer {layer_idx}, block {block_idx}")
 
-    def forward(self, x, use_graph_guidance=True, use_nudger=False):
+    def forward(self, x, use_graph_guidance=True):
         """
         Forward pass through the model.
         Note:
@@ -678,8 +680,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         Args:
             x (torch.Tensor): Input tensor.
             use_graph_guidance (bool): Whether to use graph guidance.
-            use_nudger (bool): If True, nudges the classifier head using the GraphNudger module
+        Note:
+            - self.is_using_nudger (bool): If True, nudges the classifier head using the GraphNudger module
             (uses the attention map and stats feature in sign nodes).
+            Set the flag accordingly in the training loop.
         """
 
         # 1b. Else, if graph guidance is active, use graph
@@ -697,14 +701,15 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self.classifier_logits = self.classifier(base_logits)  # shape: [B, num_classes]
 
         # 3b. Register the hook on classifier_logits to capture its gradient during backpropagation.
-        self.classifier_logits.register_hook(self._save_classifier_grad)
+        if self.training:
+            self.classifier_logits.register_hook(self._save_classifier_grad)
 
         # 4. Generate attention map and extract features.
         att_maps_batch = self.attention_map_generator.generate_attention_map(self.swin_model, x)
         features_dict_batch = xai_fe.extract_heatmap_features(att_maps_batch, threshold=ATTENTION_MAP_THRESHOLD)
 
         # 4b. If training mode, update the graph with the new features statistics
-        if self.is_training:
+        if self.training:
             # Update the graph with the new feature statistics.
             xai_fe.update_graph_features(self.graph, features_dict_batch, self.stats_keys)
 
@@ -730,7 +735,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # 6. Compute the graph bias using the Nudger module.
         # Use the attention map features and stats features.
-        if use_nudger:
+        if self.is_using_nudger:
 
             if self.classifier_grad is None:
                 # If no gradient has been captured, default to ones.
@@ -794,7 +799,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # Set boolean flag to indicate that the model is in training mode.
         self.is_training = True
-
+        # Set the GraphNudger Module to be used.
+        self.is_using_nudger = True
         # Unfreeze the specified layers in the transformer.
         self._unblock_layers(layers_to_unblock)
 
@@ -823,7 +829,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
                 # Forward pass with graph guidance and nudging enabled if active.
                 # This forward pass should update self.base_logits.
-                adjusted_logits = self.forward(images, use_graph_guidance=is_graph_active, use_nudger=True)
+                adjusted_logits = self.forward(images, use_graph_guidance=is_graph_active)
 
                 # Compute the base classifier logits by applying the classifier head.
                 # classifier_logits = self.classifier(self.base_logits)  # shape: [B, num_classes]
@@ -856,6 +862,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / count:.4f}")
             # Save model each epoch to not lose progress.
             self.save_all()
+
+        # Set the model back to evaluation mode.
+        self.is_training = False
+        self.eval()
 
     def save_model(self, path=None):
         """
@@ -983,7 +993,8 @@ if __name__ == "__main__":
     #    exit(0)
 
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
-    training_loader, valid_loader = general.get_dataloaders(return_study_id=True)
+    training_loader, _ = general.get_dataloaders(return_study_id=True, return_val_loader=False)
+    _, valid_loader = general.get_dataloaders(return_study_id=False, return_train_loader=False)
 
     # Train the model
     print("Starting training of Med-ViX-Ray...")
