@@ -516,8 +516,6 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # Flag indicating whether graph guidance has been injected into transformer layers.
         self.is_graph_used = False
-        # Flag for training mode.
-        self.is_training = False
         # Flag for Graph Nudger mode.
         self.is_using_nudger = False
 
@@ -796,9 +794,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             lambda_reg (float): Regularization parameter for the graph bias term.
         """
         ## Set the model to training mode.
-
-        # Set boolean flag to indicate that the model is in training mode.
-        self.is_training = True
+        self.train()
         # Set the GraphNudger Module to be used.
         self.is_using_nudger = True
         # Unfreeze the specified layers in the transformer.
@@ -864,7 +860,6 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.save_all()
 
         # Set the model back to evaluation mode.
-        self.is_training = False
         self.eval()
 
     def save_model(self, path=None):
@@ -906,7 +901,6 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         num_signs = len(self.graph["nodes"]) - len(MIMIC_LABELS)
         self.graph_matrix = build_adjacency_matrix(self.graph, num_diseases=len(MIMIC_LABELS), num_signs=num_signs)
         # Default: disable training mode.
-        self.is_training = checkpoint.get("is_training", False)
         self.is_using_nudger = checkpoint.get("is_using_nudger", True)
         self.is_graph_used = checkpoint.get("is_graph_used", False)
         self.eval()
@@ -926,7 +920,6 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             'current_epoch': self.current_epoch,
             'graph_matrix': self.graph_matrix,
             'is_graph_used': self.is_graph_used,
-            'is_training': self.is_training,
             'is_using_nudger': self.is_using_nudger
         }
 
