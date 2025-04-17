@@ -1,8 +1,10 @@
 import os
+import pickle
+
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from settings import DATASET_PATH, DATASET_INFO_CSV_DIR, TRAIN_TEST_SPLIT, VALIDATION_SPLIT, TEST_SPLIT, \
-    SPLITTED_DATASET_DIR, MIMIC_LABELS
+    SPLITTED_DATASET_DIR, MIMIC_LABELS, IMAGES_SET_PATHS_AVAILABLE
 
 labels = MIMIC_LABELS  # List of labels for the dataset
 
@@ -202,14 +204,44 @@ def split_dataset(merged_data, train_ratio=TRAIN_TEST_SPLIT, val_ratio=VALIDATIO
     return train_data, validation_data, test_data
 
 
-def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH):
+def _build_image_index(image_dir, save_path=IMAGES_SET_PATHS_AVAILABLE):
+    """
+    Scans the image directory and builds a set of all .jpg image paths available on disk.
+    It also saves the set to a file for future reference.
+
+    Args:
+        image_dir (str): Root directory containing the image data.
+
+    Returns:
+        set: Set of full image paths found on disk (for fast lookup).
+    """
+    print(f"[INFO] Scanning '{image_dir}' for image files...")
+
+    image_paths = []
+    for root, _, files in os.walk(image_dir):
+        for file in files:
+            if file.endswith(".jpg"):
+                full_path = os.path.join(root, file)
+                image_paths.append(full_path)
+
+    print(f"[INFO] Found {len(image_paths)} images on disk.")
+    set_paths = set(image_paths)
+
+    # Save the set to a file for future reference as .pkl
+    with open(save_path, 'wb') as f:
+        pickle.dump(set_paths, f)
+
+    return set_paths
+
+
+def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH, image_index=None):
     """
     Fetch images from the dataset based on the CSV file.
 
     Args:
         csv_file (str | pd.DataFrame | PathLike): Path to the CSV file containing image paths or pd.DataFrame.
         image_dir (str): Main Parent directory where the images are stored.
-
+        image_index (set, optional): Set of valid image paths to filter. If None, will be built automatically.
     Returns:
         list: List of image paths.
 
@@ -232,6 +264,22 @@ def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH):
     else:
         raise ValueError("csv_file must be a DataFrame or a string path to a CSV file.")
 
+    # Build image index if not provided
+    if image_index is None and not os.path.exists(IMAGES_SET_PATHS_AVAILABLE):
+        # Build the image index from the image directory
+        print(f"[INFO] Image index not found. Building from {image_dir}...")
+        image_index = _build_image_index(image_dir)
+
+    elif image_index is None:
+        try:
+            with open(IMAGES_SET_PATHS_AVAILABLE, 'rb') as f:
+                image_index = pickle.load(f)
+            print(f"[INFO] Loaded image index set from {IMAGES_SET_PATHS_AVAILABLE}.")
+        except Exception as e:
+            print(f"[WARNING] Failed to load cached image index: {e}")
+            print(f"[INFO] Rebuilding image index from {image_dir}...")
+            image_index = _build_image_index(image_dir)
+
     # Create a list to store the image paths
     image_paths = []
 
@@ -241,20 +289,20 @@ def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH):
     else:
         subject_id_col = 'subject_id'
 
-    # Iterate through the DataFrame and construct the full image paths
-    for index, row in df.iterrows():
-        # Extract folder path
+    for _, row in df.iterrows():
         study_id = row['study_id']
         subject_id = str(row[subject_id_col])
-        # Construct the image path
-        folder_path = os.path.join(f"p{subject_id[0:2]}", f"p{subject_id}", f"s{study_id}")
         dicom_id = row['dicom_id']
-        # print(f"Fetching image {dicom_id} from {folder_path}, {image_dir}")
-        # Construct the full image path
+
+        folder_path = os.path.join(f"p{subject_id[0:2]}", f"p{subject_id}", f"s{study_id}")
         image_path = os.path.join(image_dir, folder_path, dicom_id + '.jpg')
-        if os.path.exists(image_path):
+
+        if image_path in image_index:
             image_paths.append(image_path)
         else:
-            print(f"Image {image_path} does not exist. Not adding to the list.")
+            # Optional: limit noisy logs
+            print(f"[SKIP] Missing image: {image_path}")
+            continue
 
+    print(f"[INFO] Found {len(image_paths)} valid images out of {len(df)} records.")
     return image_paths
