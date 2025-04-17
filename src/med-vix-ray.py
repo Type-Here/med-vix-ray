@@ -12,6 +12,7 @@ from src.fine_tuned_model import SwinMIMICClassifier
 
 import xai.attention_map as attention
 import xai.feature_extract as xai_fe
+import xai.edges_stats_update as update_edges
 
 
 def _compute_batch_features_vectors(features_dict, keys_order=None):
@@ -290,8 +291,13 @@ class GraphAttentionModule(nn.Module):
           - If the ground truth indicates a negative finding (polarity = 0) or the sign is not mentioned,
             update the weight toward 0.
 
-        The new weight is computed using a weighted moving average:
-            w_new = (c * w_old + s_new) / (c + 1)
+        The new weight is computed using a function in xai.edges_stats_update.py module.
+        The function used at the moment is bayes_b_distribution, which uses a Beta distribution:
+        E[weight] = α / (α + β)
+        where:
+          - α = sum of s_gt for the number of positive observations
+          - β = sum of s_gt for the number of negative observations
+          - s_gt is the similarity score between the report word and the sign node label (or synonym)
 
         Args:
             graph_json (dict): Graph data with "nodes" and "edges". Each sign node must have "id", "type"=="sign",
@@ -316,7 +322,7 @@ class GraphAttentionModule(nn.Module):
         #   }, ...
         # }
         gt_entry = self.ner_ground_truth.get(study_id, {})  # Returns a dict for this study.
-        positive_labels = []
+        positive_labels = [] # List with node IDs of positive labels
 
         # gt_labels is a list of 0.0 or 1.0 from ground truth
         for i, gt_label in enumerate(gt_labels):
@@ -325,54 +331,7 @@ class GraphAttentionModule(nn.Module):
                 label_name = MIMIC_LABELS[i]
                 positive_labels.append(MIMIC_LABELS_MAP_TO_GRAPH_IDS[label_name])
 
-        for edge in graph_json["links"]:
-            if edge["relation"] == "correlation":
-                edge["source"] = int(edge["source"])  # disease node index
-                edge["target"] = int(edge["target"])  # disease node index
-
-                # If both disease nodes are present in the positive labels,
-                # update the weight positively.
-                if edge["source"] in positive_labels and edge["target"] in positive_labels:
-                    polarity = 1.0
-                else:
-                    polarity = 0.2
-
-                weight_old = edge.get("weight", 1.0)
-                count = edge.get("update_count", 0)
-
-                # Compute the new weight with weighted moving average.
-                weight_new = (count * weight_old + polarity) / (count + 1)
-                edge["weight"] = weight_new
-                edge["update_count"] = count + 1
-
-
-            elif edge["relation"] == "finding":
-                disease_idx = int(edge["source"])  # disease node index
-
-                # If the disease node is not in the positive labels, skip this edge.
-                if disease_idx not in positive_labels:
-                    continue
-
-                sign_idx = int(edge["target"])  # sign node index
-                weight_old = edge.get("weight", 1.0)
-                count = edge.get("update_count", 0)
-
-                # Determine the new similarity value s_new.
-                # Check if the ground truth indicates anything for this sign node.
-                if str(sign_idx) in gt_entry:
-                    s_gt, polarity = gt_entry[str(sign_idx)]
-                    s_new = s_gt if polarity == 1 else 0.2
-                else:
-                    # If not mentioned, assume the sign was not observed.
-                    # TODO: Check this value
-                    s_new = 0.4
-
-                # Compute the new weight with weighted moving average.
-                weight_new = (count * weight_old + s_new) / (count + 1)
-                edge["weight"] = weight_new
-                edge["update_count"] = count + 1
-
-        return graph_json
+        return update_edges.bayes_b_distribution(graph_json, positive_labels, gt_entry)
 
 
 # ========================= GRAPH NUDGER =========================
@@ -709,7 +668,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # 4b. If training mode, update the graph with the new features statistics
         if self.training:
             # Update the graph with the new feature statistics.
-            xai_fe.update_graph_features(self.graph, features_dict_batch, self.stats_keys)
+            xai_fe.update_graph_features(self.graph, features_dict_batch, self.stats_keys, apply_similarity=True)
 
         # 1a. If graph guidance is not active return the classifier logits directly.
         if not use_graph_guidance:
@@ -848,14 +807,14 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 for i, study_id in enumerate(study_ids):
                     # Update the graph with the new weights.
                     # This function updates the weights of the edges in the graph based on the classifier logits.
-                    self.graph = self.graph_attention_module.update_edge_weights_with_ground_truth(
+                    self.graph_attention_module.update_edge_weights_with_ground_truth(
                         self.graph, study_id, labels[i].cpu().numpy()
                     )
 
-                running_loss += loss_total.item()
+                running_loss += loss_total.detach().item()
                 count += 1
 
-            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / count:.4f}")
+            print(f"[TRAIN] Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / count:.4f}")
             # Save model each epoch to not lose progress.
             self.save_all()
 
