@@ -863,15 +863,44 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         if path is None:
             path = os.path.join(MODELS_DIR, 'med_vixray_model.pth')
-        super().save_model(path)
+        torch.save(self, path)
 
-    def load_model(self, path=None):
+    def load_model_from_state(self, state_dict_path=None, graph_json=None):
         """
-        Load the model from the specified path.
+        Load the model state dict from the specified path.
+        This includes loading the graph and rebuilding the adjacency matrix.
+        Args:
+            state_dict_path (str, optional): Path to the model file. If None, defaults to 'med_vixray_model_state.pth'.
+            graph_json (str, optional): Path to the graph JSON file. If None, defaults to 'med_vixray_model_graph.json'.
+        Note:
+            - This will override the current model state.
+            - The model is set to evaluation mode after loading.
+            - The graph is updated with the new weights.
+            - The model is set to use nudging module.
         """
-        if path is None:
-            path = os.path.join(MODELS_DIR, 'med_vixray_model.pth')
-        super().load_model(path)
+        print("Warning: Loading model state dict and graph JSON. This will override the current model state.")
+
+        if state_dict_path is None:
+            state_dict_path = os.path.join(MODELS_DIR, 'med_vixray_model_state.pth')
+        if graph_json is None:
+            graph_json = os.path.join(MODELS_DIR, 'med_vixray_model_graph.json')
+
+        # Load the state dict from the specified path.
+        checkpoint = torch.load(state_dict_path, map_location=self.device)
+        # Load the model state dict.
+        self.load_state_dict(checkpoint["model_state_dict"])
+
+        with open(graph_json, 'r') as graph_file:
+            self.graph = json.load(graph_file)
+
+        num_signs = len(self.graph["nodes"]) - len(MIMIC_LABELS)
+        self.graph_matrix = build_adjacency_matrix(self.graph, num_diseases=len(MIMIC_LABELS), num_signs=num_signs)
+        # Default: disable training mode.
+        self.is_training = checkpoint.get("is_training", False)
+        self.is_using_nudger = checkpoint.get("is_using_nudger", True)
+        self.is_graph_used = checkpoint.get("is_graph_used", False)
+        self.eval()
+
 
     def save_state(self, path=None):
         """
@@ -884,7 +913,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         state = {
             'model_state_dict': self.state_dict(),
             'graph': self.graph,
-            'current_epoch': self.current_epoch
+            'current_epoch': self.current_epoch,
+            'graph_matrix': self.graph_matrix,
+            'is_graph_used': self.is_graph_used,
+            'is_training': self.is_training,
+            'is_using_nudger': self.is_using_nudger
         }
 
         if path is None:
