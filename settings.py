@@ -21,6 +21,9 @@ MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'mo
 # Report data
 MIMIC_REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mimic')
 
+# Set of the available images in all directories file in pickle format
+IMAGES_SET_PATHS_AVAILABLE = os.path.join(MIMIC_REPORT_DIR, 'images_set_available.pkl')
+
 # Dataset path
 DATASET_PATH = os.environ.get('MIMIC_DATASET_PATH')
 
