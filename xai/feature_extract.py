@@ -408,7 +408,7 @@ def _similarity_evaluation(graph_json, extracted_features):
     return graph_json
 
 
-def update_graph_features(graph_json, extracted_features, sign_label, apply_similarity=False):
+def update_graph_features(graph, extracted_features, sign_label, apply_similarity=False):
     """
     Update the clinical finding node in the JSON graph with newly extracted features.
     It supports both single-sample and batched inputs.
@@ -417,7 +417,7 @@ def update_graph_features(graph_json, extracted_features, sign_label, apply_simi
     Special handling is done for the "position" feature (a list of 4 values).
 
     Args:
-        graph_json (dict): JSON graph data.
+        graph (dict): JSON graph data.
         extracted_features (dict or dict of torch.Tensor):
             - If single-sample, a dictionary of features (e.g., {"intensity": float, "position": [x_min,x_max,y_min,y_max], ...}).
             - If batched, a dictionary where each key maps to a torch.Tensor of shape [B] (or [B, 4] for position).
@@ -427,47 +427,50 @@ def update_graph_features(graph_json, extracted_features, sign_label, apply_simi
     Returns:
         dict: Updated graph_json.
     """
-    # Check if extracted_features is batched.
-    example_key = list(extracted_features.keys())[0]
-    if isinstance(extracted_features[example_key], torch.Tensor) and extracted_features[example_key].ndim > 1:
-        batch_size = extracted_features[example_key].shape[0]
-        # Loop over each sample in the batch.
-        for i in range(batch_size):
-            # Build a single-sample features dictionary.
-            single_features = {}
-            for key, tensor_val in extracted_features.items():
-                if tensor_val.ndim == 1:
-                    single_features[key] = tensor_val[i].item()
-                else:
-                    single_features[key] = tensor_val[i].tolist()
-            # Recursively call update_graph_features for the single-sample dictionary.
-            graph_json = update_graph_features(graph_json, single_features, sign_label, apply_similarity)
-        return graph_json
-    else:
-        # Process as a single feature dictionary.
-        for node in graph_json["nodes"]:
-            if node["label"] == sign_label:
-                # Ensure the node has a count of observations.
-                if "count" not in node:
-                    node["count"] = 0
-                for key, value in extracted_features.items():
-                    # If the feature is not yet initialized or this is the first observation, initialize it.
-                    if node["features"].get(key) is None or node["count"] == 0:
-                        node["features"][key] = value
-                    elif key == "position":
-                        # Update each coordinate using a weighted moving average.
-                        node["features"][key] = [
-                            __update_weighted_mean(node["features"][key][i], value[i], node["count"])
-                            for i in range(4)
-                        ]
-                    else:
-                        node["features"][key] = __update_weighted_mean(
-                            node["features"][key], value, node["count"]
-                        )
-                # Increment the observation count.
-                node["count"] += 1
+    # Detect batch or single-sample
+    is_batch = any(isinstance(v, torch.Tensor) and v.ndim >= 1 for v in extracted_features.values())
 
-                # If apply_similarity is True, update the node similarity.
-                if apply_similarity:
-                    _similarity_evaluation_single_node(node, extracted_features)
-        return graph_json
+    if is_batch:
+        batch_size = next(iter(extracted_features.values())).shape[0]
+        for i in range(batch_size):
+            single = {
+                k: v[i].item() if v.ndim == 1 else v[i].tolist()
+                for k, v in extracted_features.items()
+            }
+            graph = update_graph_features(graph, single, sign_label, apply_similarity)
+        return graph
+
+    # Now processing a single sample
+    for node in graph["nodes"]:
+        if node.get("label") != sign_label:
+            continue
+
+        # Initialize observation count and feature dict
+        node.setdefault("count", 0)
+        #node.setdefault("features", {})
+
+        for key, value in extracted_features.items():
+            if value is None:
+                continue
+
+            # Init feature if not present
+            if key not in node["features"] or node["count"] == 0:
+                node["features"][key] = value
+            elif key == "position":
+                # Update each of the 4 coordinates
+                node["features"][key] = [
+                    __update_weighted_mean(node["features"][key][i], value[i], node["count"])
+                    for i in range(4)
+                ]
+            else:
+                node["features"][key] = __update_weighted_mean(
+                    node["features"][key], value, node["count"]
+                )
+
+        # Optional similarity evaluation
+        if apply_similarity:
+            _similarity_evaluation_single_node(node, extracted_features)
+
+        node["count"] += 1  # Only if actually updated
+
+    return graph
