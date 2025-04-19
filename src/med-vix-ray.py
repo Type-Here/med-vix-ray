@@ -755,7 +755,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         ## Set the model to training mode.
         self.train()
         # Set the GraphNudger Module to be used.
-        self.is_using_nudger = True
+        # self.is_using_nudger = True
         # Unfreeze the specified layers in the transformer.
         self._unblock_layers(layers_to_unblock)
 
@@ -771,6 +771,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             # Activate graph guidance only after the defined epoch.
             is_graph_active = (epoch + 1) >= EPOCH_GRAPH_INTEGRATION
+            # Set the GraphNudger Module to be used.
+            self.is_using_nudger = is_graph_active
+
             print(f"Epoch {epoch + 1}/{num_epochs} (Graph guidance active: {is_graph_active})")
 
             for images, labels, study_ids in train_loader:
@@ -785,10 +788,6 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 # Forward pass with graph guidance and nudging enabled if active.
                 # This forward pass should update self.base_logits.
                 adjusted_logits = self.forward(images, use_graph_guidance=is_graph_active)
-
-                # Compute the base classifier logits by applying the classifier head.
-                # classifier_logits = self.classifier(self.base_logits)  # shape: [B, num_classes]
-                # Should be already computed in the forward pass and stored in self.classifier_logits.
 
                 # Classification loss computed on the adjusted logits.
                 loss_class = loss_fn(adjusted_logits, labels)
