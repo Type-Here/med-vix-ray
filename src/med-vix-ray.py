@@ -796,6 +796,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                                            learning_rate_classifier, optimizer_param)
         loss_fn = loss_fn_param
 
+        # Reduce remaining epochs if restarting from a checkpoint.
+        num_epochs = num_epochs - self.current_epoch
+        if num_epochs <= 0:
+            print("[WARNING] - No epochs left to train.")
+            return
+
         for epoch in range(num_epochs):
             self.current_epoch = epoch
             running_loss = 0.0
