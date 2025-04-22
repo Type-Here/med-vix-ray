@@ -54,7 +54,7 @@ def evaluate_predictions(predictions, test_dataset, threshold=0.5):
     # Check if predictions is a dictionary or numpy array
     if isinstance(predictions, np.ndarray):
         # If it's a numpy array, convert it to a dictionary with image paths as keys
-        image_paths = dh.fetch_image_from_csv(test_dataset, DATASET_PATH)
+        image_paths = dh.fetch_image_from_csv(test_dataset, DATASET_PATH, csv_kind='test')
         predictions = {image_path: predic for image_path, predic in zip(image_paths, predictions)}
     elif not isinstance(predictions, dict):
         raise ValueError("Predictions must be a dictionary or a numpy array.")
@@ -173,7 +173,7 @@ def baseline_evaluation(testing_dataset):
     model.eval()
 
     # Get all image paths from the test dataset
-    image_paths = dh.fetch_image_from_csv(testing_dataset, DATASET_PATH)
+    image_paths = dh.fetch_image_from_csv(testing_dataset, DATASET_PATH, csv_kind='test')
     print("Image paths:", image_paths)
 
     # Define the image preprocessing pipeline

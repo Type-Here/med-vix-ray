@@ -92,9 +92,9 @@ def _get_image_paths_from_csv(train_dataset=None, validation_dataset=None):
     """
     train_image_paths, validation_image_paths = None, None
     if train_dataset is not None:
-        train_image_paths = dh.fetch_image_from_csv(train_dataset, DATASET_PATH)
+        train_image_paths = dh.fetch_image_from_csv(train_dataset, DATASET_PATH, csv_kind='train')
     if validation_dataset is not None:
-        validation_image_paths = dh.fetch_image_from_csv(validation_dataset, DATASET_PATH)
+        validation_image_paths = dh.fetch_image_from_csv(validation_dataset, DATASET_PATH, csv_kind='validation')
 
     return train_image_paths, validation_image_paths
 
