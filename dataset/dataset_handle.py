@@ -234,14 +234,17 @@ def _build_image_index(image_dir, save_path=IMAGES_SET_PATHS_AVAILABLE):
     return set_paths
 
 
-def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH, image_index=None):
+def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH, csv_kind='train', use_csv_data_only=True):
     """
     Fetch images from the dataset based on the CSV file.
 
     Args:
         csv_file (str | pd.DataFrame | PathLike): Path to the CSV file containing image paths or pd.DataFrame.
         image_dir (str): Main Parent directory where the images are stored.
-        image_index (set, optional): Set of valid image paths to filter. If None, will be built automatically.
+        csv_kind (str): Kind of CSV file. Can be 'train', 'validation', or 'test'.
+        This is used to retrieve the correct pickle file.
+        use_csv_data_only (bool): If True, only use the images available in the CSV file
+        to build the index saved in the pickle file.
     Returns:
         list: List of image paths.
 
@@ -264,22 +267,6 @@ def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH, image_index=None):
     else:
         raise ValueError("csv_file must be a DataFrame or a string path to a CSV file.")
 
-    # Build image index if not provided
-    if image_index is None and not os.path.exists(IMAGES_SET_PATHS_AVAILABLE):
-        # Build the image index from the image directory
-        print(f"[INFO] Image index not found. Building from {image_dir}...")
-        image_index = _build_image_index(image_dir)
-
-    elif image_index is None:
-        try:
-            with open(IMAGES_SET_PATHS_AVAILABLE, 'rb') as f:
-                image_index = pickle.load(f)
-            print(f"[INFO] Loaded image index set from {IMAGES_SET_PATHS_AVAILABLE}.")
-        except Exception as e:
-            print(f"[WARNING] Failed to load cached image index: {e}")
-            print(f"[INFO] Rebuilding image index from {image_dir}...")
-            image_index = _build_image_index(image_dir)
-
     # Create a list to store the image paths
     image_paths = []
 
@@ -289,6 +276,40 @@ def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH, image_index=None):
     else:
         subject_id_col = 'subject_id'
 
+    # image_index is the path to the pickle file containing the image paths available locally
+    image_index = os.path.join(IMAGES_SET_PATHS_AVAILABLE, f'_{csv_kind}.pkl')
+
+    # Build image index if not provided
+    if not os.path.exists(image_index) and use_csv_data_only:
+            return __build_image_index_and_fetch_from_csv(image_paths, df,
+                                                          subject_id_col=subject_id_col, image_dir=image_dir)
+    try:
+        with open(IMAGES_SET_PATHS_AVAILABLE, 'rb') as f:
+            image_index = pickle.load(f)
+        print(f"[INFO] Loaded image index set from {IMAGES_SET_PATHS_AVAILABLE}.")
+    except Exception as e:
+        print(f"[WARNING] Failed to load cached image index: {e}")
+        print(f"[INFO] Rebuilding image index from {image_dir}...")
+        image_index = _build_image_index(image_dir)
+
+    return __fetch_image_paths_only(csv_file, image_dir, image_paths,
+                                        image_index, df, subject_id_col=subject_id_col)
+
+
+def __fetch_image_paths_only(csv_file, image_dir, image_paths, image_index,
+                             df, subject_id_col='subject_id'):
+    """
+    Fetch image paths from the CSV file and check if they exist in the image index already built.
+    Args:
+        csv_file (str): Path to the CSV file containing image paths.
+        image_dir (str): Main Parent directory where the images are stored.
+        image_paths (list): List to stored image paths.
+        image_index (set): Set of image paths available on disk.
+        df (pd.DataFrame): DataFrame containing the metadata.
+        subject_id_col (str): Column name for subject ID in the DataFrame.
+    Returns:
+        list: List of image paths to use.
+    """
     for _, row in df.iterrows():
         study_id = row['study_id']
         subject_id = str(row[subject_id_col])
@@ -304,5 +325,47 @@ def fetch_image_from_csv(csv_file, image_dir=DATASET_PATH, image_index=None):
             print(f"[SKIP] Missing image: {image_path}")
             continue
 
-    print(f"[INFO] Found {len(image_paths)} valid images out of {len(df)} records.")
+    print(f"[INFO] Found {len(image_paths)} valid images out of {len(df)} records for csv: {csv_file}.")
+    return image_paths
+
+
+def __build_image_index_and_fetch_from_csv(image_paths, dataframe,
+                                           subject_id_col='subject_id', image_dir=DATASET_PATH):
+    """
+        Build a list of image paths from the DataFrame and save them to a list using pickle.
+        It will check only for the images available in the CSV file and not all the images in the working directory.
+        Args:
+            image_paths (list): List to store the image paths.
+            dataframe (pd.DataFrame): DataFrame containing the metadata.
+            subject_id_col (str): Column name for subject ID in the DataFrame.
+            image_dir (str): Main Parent directory where the images are stored.
+        Note:
+            It will save the available images in the image_paths list as pkl file checking only the csv data
+            instead of all working directory.
+        Returns:
+            list: List of image paths.
+    """
+    # Iterate through the DataFrame and construct the full image paths
+    for index, row in dataframe.iterrows():
+        # Extract folder path
+        study_id = row['study_id']
+        subject_id = str(row[subject_id_col])
+
+        # Construct the image path
+        folder_path = os.path.join(f"p{subject_id[0:2]}", f"p{subject_id}", f"s{study_id}")
+        dicom_id = row['dicom_id']
+
+        # Construct the full image path
+        image_path = os.path.join(image_dir, folder_path, dicom_id + '.jpg')
+        if os.path.exists(image_path):
+            image_paths.append(image_path)
+        else:
+            print(f"[SKIP] - Missing image: {image_path}")
+
+        # Saving the image paths to a pickle file
+    with open(IMAGES_SET_PATHS_AVAILABLE, 'wb') as f:
+        print("Saving the image paths to a pickle file as set.")
+        set_paths = set(image_paths)
+        pickle.dump(set_paths, f)
+
     return image_paths
