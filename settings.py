@@ -96,7 +96,7 @@ POSITIVE_WEIGHT_FINDING = 0.7 # Weight for positive samples
 NEGATIVE_WEIGHT_FINDING = -0.2 # Weight for negative samples
 
 # ALPHA CORRECTION IN ATTENTION BY THE GRAPH
-ALPHA_GRAPH = 0.2 # Alpha correction factor for the graph attention mechanism
+ALPHA_GRAPH = 0.2 # Alpha correction factor for the graph attention mechanism Initial value (Learnable)
 
 # LOSS FROM GRAPH
 LAMBDA_REG=0.05 # Regularization parameter for the loss function

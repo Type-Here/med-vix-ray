@@ -157,7 +157,7 @@ class GraphBiasAdapterConv(nn.Module):
 
 
 class GraphAttentionBias(nn.Module):
-    def __init__(self, alpha=ALPHA_GRAPH, conv=None, d_k=64):
+    def __init__(self, alpha=ALPHA_GRAPH, conv=None, d_k=64, num_layers=2):
         """
         Initialize the graph attention bias module.
         This module modifies the attention scores injecting the graph information
@@ -170,14 +170,33 @@ class GraphAttentionBias(nn.Module):
             ValueError: If conv parameter is left to None.
         """
         super(GraphAttentionBias, self).__init__()
-        self.alpha = nn.Parameter(torch.tensor(alpha, dtype=torch.float32))  # or fix as a hyperparameter
+        # Minimum alpha value for graph attention bias
+        self.min_alpha = 0.05
+        eps = 1e-6
+        ratio = max((alpha - self.min_alpha) / (1 - self.min_alpha + eps), eps)
+        w_init = np.log(ratio / (1 - ratio + eps))
+
+        # Alpha logits for each layer where the graph bias is injected.
+        self._alpha_logits = nn.ParameterList([
+            nn.Parameter(torch.tensor(w_init, dtype=torch.float32))
+            for _ in range(num_layers)
+        ])
+        #self.alpha = nn.Parameter(torch.tensor(alpha, dtype=torch.float32))  # or fix as a hyperparameter
+
         if conv is None:
             raise ValueError("Conv value needed!")
         self.conv = conv
         self.d_k = d_k  # Dimension for the key/query/value embeddings
         self._printed_debug = False  # Flag to control debug printing
 
-    def forward(self, attn_scores, graph_adj_matrix):
+    def get_alpha(self, layer_idx):
+        """
+        Compute learnable alpha in [min_alpha, 1] for a given layer.
+        """
+        logit = self._alpha_logits[layer_idx]
+        return self.min_alpha + (1 - self.min_alpha) * torch.sigmoid(logit)
+
+    def forward(self, attn_scores, graph_adj_matrix, layer_idx):
         # If attn_scores is 3D, add a dimension to make it 4D
         if attn_scores.dim() == 3:
             attn_scores = attn_scores.unsqueeze(1)  # Now [B, 1, N, N]
@@ -202,7 +221,9 @@ class GraphAttentionBias(nn.Module):
         g_resized = g_resized.expand(ba, -1, -1, -1)  # [B, 1, N, N]
 
         # Call the convolutional layer to adapt the graph matrix to the attention scores:
-        g_adapted = self.conv(g_resized) # [B, N, N]
+        # Normalize with tanh
+        g_adapted = torch.tanh(self.conv(g_resized))
+        #g_adapted = self.conv(g_resized) # [B, N, N]
 
         # Debugging information only first time
         if not self._printed_debug:
@@ -212,10 +233,15 @@ class GraphAttentionBias(nn.Module):
             self._printed_debug = True
 
         # Standard scaled dot-product attention factor:
-        scaling = np.sqrt(self.d_k)
+        # scaling = np.sqrt(self.d_k)
+
+        # Obtain the alpha value for the current layer
+        alpha = self.get_alpha(layer_idx)
 
         # Modify the attention scores by adding the adapted graph matrix:
-        modified_scores = attn_scores / scaling + self.alpha * g_adapted.unsqueeze(1)  # [B, 1, N, N]
+        # No scaling needed in this case as swin transformer already scales
+        # the attention scores using cosine similarity and tau division
+        modified_scores = attn_scores + alpha * g_adapted.unsqueeze(1)  # [B, 1, N, N]
 
         # modified_scores = attn_scores / (attn_scores.shape[-1]**0.5) + self.alpha * g_resized
         return torch.softmax(modified_scores, dim=-1)
@@ -522,10 +548,14 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         print("Initializing graph attention bias...")
         d_model = self.swin_model.layers[0].blocks[0].attn.dim
         num_heads = self.swin_model.layers[0].blocks[0].attn.num_heads
+        num_layers = len(self.swin_model.layers)  # Total number of layers in the model
+
+        bias_inj_num_layers = num_layers - INJECT_BIAS_FROM_THIS_LAYER
         # Calculate the dimension for each head.
         d_k = d_model // num_heads
         # Initialize the graph bias module.
-        self.graph_bias_module = GraphAttentionBias(alpha=ALPHA_GRAPH, conv=self.conv_adapter, d_k=d_k)
+        self.graph_bias_module = GraphAttentionBias(alpha=ALPHA_GRAPH, conv=self.conv_adapter,
+                                                    d_k=d_k, num_layers=bias_inj_num_layers)
 
         print("Initializing attention map modules...")
         # Initialize the AttentionMap module.
@@ -617,12 +647,14 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             for block_idx, block in enumerate(layer.blocks):
                 original_forward = block.attn.forward
 
-                def new_forward(x, *args, orig_forward=original_forward, **kwargs):
+                layer_index_in_bias = threshold_layer - layer_idx
+
+                def new_forward(x, *args, orig_forward=original_forward, layer_index=layer_index_in_bias, **kwargs):
                     # Get raw attention scores (this requires that the original attn returns them)
                     attn_scores = orig_forward(x, *args, **kwargs)
                     # Inject graph bias using our module. Expecting attn_scores to be of shape [B, H, N, N]
 
-                    modified_attn = self.graph_bias_module(attn_scores, graph_adj_matrix)
+                    modified_attn = self.graph_bias_module(attn_scores, graph_adj_matrix, layer_index)
                     return modified_attn
 
                 block.attn.forward = new_forward
