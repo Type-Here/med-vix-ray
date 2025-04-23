@@ -29,10 +29,14 @@ DATASET_PATH = os.environ.get('MIMIC_DATASET_PATH')
 
 # Directory where csv files are stored, containing the dataset information
 DATASET_INFO_CSV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mimic', 'info')
-SPLITTED_DATASET_DIR = os.path.join(DATASET_INFO_CSV_DIR, 'split_dataset')
+SPLIT_DATASET_DIR = os.path.join(DATASET_INFO_CSV_DIR, 'split_dataset')
+MIMIC_SPLIT_DIR = os.path.join(DATASET_INFO_CSV_DIR, 'mimic_split')
 
 # List of Downloaded Files (if partial_list is not empty) .txt file
 DOWNLOADED_FILES = os.path.join(DATASET_INFO_CSV_DIR, 'downloaded.txt')
+
+# MIMIC Split CSV Info
+MIMIC_SPLIT_CSV = os.path.join(DATASET_INFO_CSV_DIR, 'mimic-cxr-split.csv')
 
 # Labels Column Names
 MIMIC_LABELS = ["Atelectasis","Cardiomegaly","Consolidation","Edema",
