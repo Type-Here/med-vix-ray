@@ -1001,8 +1001,8 @@ if __name__ == "__main__":
     #    exit(0)
 
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
-    training_loader, _ = general.get_dataloaders(return_study_id=True, return_val_loader=False)
-    _, valid_loader = general.get_dataloaders(return_study_id=False, return_train_loader=False)
+    training_loader, _ = general.get_dataloaders(return_study_id=True, return_val_loader=False, pin_memory=is_cuda)
+    _, valid_loader = general.get_dataloaders(return_study_id=False, return_train_loader=False, pin_memory=is_cuda)
 
     # Train the model
     print("Starting training of Med-ViX-Ray...")
