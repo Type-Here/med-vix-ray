@@ -3,7 +3,7 @@ import os
 from torch.utils.data import DataLoader
 
 import dataset.dataset_handle as dh
-from settings import DOWNLOADED_FILES, DATASET_PATH, MIMIC_LABELS, NUM_WORKERS
+from settings import DOWNLOADED_FILES, DATASET_PATH, MIMIC_LABELS, NUM_WORKERS, SPLIT_DATASET_DIR, MIMIC_SPLIT_DIR
 from src.preprocess import ImagePreprocessor
 
 """
@@ -53,7 +53,7 @@ def basic_menu_model_option(model_path, model_obj):
 
 # ======= STANDARD OPERATIONS TO GET TRAINING AND VALIDATION DATASET AND LABELS =======
 
-def _load_train_val_sets():
+def _load_train_val_sets(all_data=False):
     """
     Load the training and validation datasets.
     If they do not exist, create them using dataset_handle.load_ready_dataset function.
@@ -61,12 +61,14 @@ def _load_train_val_sets():
         tuple(pd.DataFrame, pd.DataFrame): The training and validation datasets.
     """
     # Load dataset
+    partial_list = None if all_data else DOWNLOADED_FILES
+    split_dir = MIMIC_SPLIT_DIR if all_data else SPLIT_DATASET_DIR
     try:
-        train_dataset = dh.load_ready_dataset(phase='train')
+        train_dataset = dh.load_ready_dataset(phase='train', directory=split_dir)
     except FileNotFoundError:
         print("Train dataset not found. Creating a new one.")
-        merged_data = dh.dataset_handle(partial_list=DOWNLOADED_FILES)
-        train_dataset, _, _ = dh.split_dataset(merged_data)
+        merged_data = dh.dataset_handle(partial_list=partial_list)
+        train_dataset, _, _ = dh.split_dataset(merged_data, partial_list=partial_list)
 
     try:
         validation_dataset = dh.load_ready_dataset(phase='validation')
@@ -123,29 +125,43 @@ def _get_train_val_labels(train_dataset=None, validation_dataset=None):
 # =============================== MAIN CALLING FUNCTION TO GET DIRECTLY THE DATALOADERS ===============================
 
 
-def get_dataloaders(return_study_id=False, pin_memory=False, return_train_loader=True, return_val_loader=True):
+def get_dataloaders(return_study_id=False, pin_memory=False,
+                    return_train_loader=True, return_val_loader=True,
+                    all_data=False, use_bucket=False):
     """
         Get the training and validation dataloaders.
 
         This function loads the datasets, fetches the image paths and labels and creates the dataloaders.
         Datasets are the same for every model, using settings.py variables to get the paths.
-        Note:
-            If return_train_loader or return_val_loader is set to False, the function will return None
-            for that dataloader but a tuple is always returned.
 
-        The dataloaders are created using the ImagePreprocessor class for preprocessing images.
+        Note:
+
+        -If return_train_loader or return_val_loader is set to False,
+        the function will return None for that dataloader but a tuple is always returned.
+
+        -When all_data is set to True, the function will load the entire dataset using mimic Physionet division csv info.
+        The directory for the dataset is set to MIMIC_SPLIT_DIR in settings.py.
+
+        -The dataloaders are created using the ImagePreprocessor class for preprocessing images.
         Args:
             return_study_id (bool): If True, the dataloader will return the study_id
             along with the image and label in the tuple.
+
             pin_memory (bool): If True, the dataloader will use pinned memory for faster data transfer to GPU.
+
             return_train_loader (bool): If True, the dataloader will return the training dataloader.
+
             return_val_loader (bool): If True, the dataloader will return the validation dataloader.
+
+            all_data (bool): If True, the function will load the entire dataset using mimic physionet division csv info.
+
+            use_bucket (bool): If True, the function will use the bucketed dataset in Dataloader.
 
         Returns:
             tuple: (DataLoader, DataLoader) for training and validation datasets.
     """
     # Load the dataset with partially downloaded files
-    train_dataset, validation_dataset = _load_train_val_sets()
+    train_dataset, validation_dataset = _load_train_val_sets(all_data=all_data)
     print("Train and Validation datasets loaded.")
 
     # Obtain Paths
