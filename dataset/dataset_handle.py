@@ -4,7 +4,7 @@ import pickle
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from settings import DATASET_PATH, DATASET_INFO_CSV_DIR, TRAIN_TEST_SPLIT, VALIDATION_SPLIT, TEST_SPLIT, \
-    SPLITTED_DATASET_DIR, MIMIC_LABELS, IMAGES_SET_PATHS_AVAILABLE
+    SPLIT_DATASET_DIR, MIMIC_LABELS, IMAGES_SET_PATHS_AVAILABLE, MIMIC_SPLIT_CSV, MIMIC_SPLIT_DIR
 
 labels = MIMIC_LABELS  # List of labels for the dataset
 
@@ -14,6 +14,21 @@ labels = MIMIC_LABELS  # List of labels for the dataset
     The dataset is expected to be in a specific directory structure and format.
     Manage also the labels and metadata and partial list of images.
 """
+
+def __save_split_datasets(directory, train_data, validation_data, test_data):
+    """
+    Save the split datasets to the specified directory.
+
+    Args:
+        directory (str): Directory where the split datasets will be saved.
+        train_data (pd.DataFrame): Training dataset.
+        validation_data (pd.DataFrame): Validation dataset.
+        test_data (pd.DataFrame): Test dataset.
+    """
+    os.makedirs(directory, exist_ok=True)
+    train_data.to_csv(os.path.join(directory, 'train_data.csv'), index=False)
+    validation_data.to_csv(os.path.join(directory, 'validation_data.csv'), index=False)
+    test_data.to_csv(os.path.join(directory, 'test_data.csv'), index=False)
 
 def _load_dataset_metadata():
     """
@@ -56,13 +71,13 @@ def _load_labels():
         raise FileNotFoundError(f"Labels file {labels_path} does not exist.")
 
 
-def load_ready_dataset(phase='train'):
+def load_ready_dataset(phase='train', directory=SPLIT_DATASET_DIR):
     """
     Load the dataset for the specified phase (train, validation, test).
 
     Args:
         phase (str): Phase of the dataset to load. Can be 'train', 'validation', or 'test'.
-
+        directory (str): Directory where the split datasets are stored.
     Returns:
         pd.DataFrame: DataFrame containing the dataset for the specified phase.
 
@@ -73,12 +88,9 @@ def load_ready_dataset(phase='train'):
     if phase not in ['train', 'validation', 'test']:
         raise ValueError("Phase must be 'train', 'validation', or 'test'.")
 
-    # Check if the dataset path exists
-    if not os.path.exists(DATASET_INFO_CSV_DIR):
-        raise FileNotFoundError(f"Dataset path {DATASET_INFO_CSV_DIR} does not exist.")
-
     # Load the dataset based on the phase
-    dataset_path = os.path.join(SPLITTED_DATASET_DIR, f'{phase}_data.csv')
+    dataset_path = os.path.join(directory, f'{phase}_data.csv')
+
     if os.path.exists(dataset_path):
         return pd.read_csv(dataset_path)
     else:
@@ -145,7 +157,8 @@ def dataset_handle(partial_list=None):
     return merged_data
 
 
-def split_dataset(merged_data, train_ratio=TRAIN_TEST_SPLIT, val_ratio=VALIDATION_SPLIT, test_ratio=TEST_SPLIT):
+def split_dataset(merged_data, train_ratio=TRAIN_TEST_SPLIT,
+                  val_ratio=VALIDATION_SPLIT, test_ratio=TEST_SPLIT, partial_list=None):
     """
     Split the dataset into training, validation, and test sets.
     The split is done in a stratified manner based on the labels.
@@ -155,10 +168,15 @@ def split_dataset(merged_data, train_ratio=TRAIN_TEST_SPLIT, val_ratio=VALIDATIO
         train_ratio (float): Ratio of training data. Default in settings.py is 0.8
         val_ratio (float): Ratio of validation data. Default in settings.py is 0.1
         test_ratio (float): Ratio of test data. Default in settings.py is 0.1
+        partial_list (str, optional): Path to a txt file containing a list of rows to keep or available.
+        If None: all data will be managed from mimic split info.
 
     Returns:
         tuple (pd.DataFrame, pd.DataFrame, pd.DataFrame): Tuple containing the training, validation, and test sets.
     """
+    if partial_list is None:
+        return split_dataset_using_mimic_split(merged_data)
+
     # Check if the ratios sum to 1
     if train_ratio + val_ratio + test_ratio != 1.0:
         raise ValueError("Ratios must sum to 1.")
@@ -195,11 +213,40 @@ def split_dataset(merged_data, train_ratio=TRAIN_TEST_SPLIT, val_ratio=VALIDATIO
                                                   random_state=42)
 
     # Save the splits to CSV files
-    split_dir = SPLITTED_DATASET_DIR
-    os.makedirs(split_dir, exist_ok=True)
-    train_data.to_csv(os.path.join(split_dir, 'train_data.csv'), index=False)
-    validation_data.to_csv(os.path.join(split_dir, 'validation_data.csv'), index=False)
-    test_data.to_csv(os.path.join(split_dir, 'test_data.csv'), index=False)
+    split_dir = SPLIT_DATASET_DIR
+    __save_split_datasets(split_dir, train_data, validation_data, test_data)
+
+    return train_data, validation_data, test_data
+
+
+def split_dataset_using_mimic_split(merged_data):
+    """
+    Split the dataset into training, validation, and test sets using the MIMIC split.
+    The split is done in a stratified manner based on the labels.
+
+    Args:
+        merged_data (pd.DataFrame): DataFrame containing the merged dataset.
+
+    Returns:
+        tuple (pd.DataFrame, pd.DataFrame, pd.DataFrame): Tuple containing the training, validation, and test sets.
+    """
+    # Load the MIMIC split
+    if not os.path.exists(MIMIC_SPLIT_CSV):
+        raise FileNotFoundError(f"MIMIC split file {MIMIC_SPLIT_CSV} does not exist.")
+
+    mimic_split = pd.read_csv(MIMIC_SPLIT_CSV)
+
+    # Merge the MIMIC split with the merged data
+    merged_data = pd.merge(merged_data, mimic_split, on='dicom_id', how='inner')
+
+    # Split the dataset based on the MIMIC split
+    train_data = merged_data[merged_data['split'] == 'train']
+    validation_data = merged_data[merged_data['split'] == 'val']
+    test_data = merged_data[merged_data['split'] == 'test']
+
+    if not os.path.exists(MIMIC_SPLIT_DIR):
+        __save_split_datasets(MIMIC_SPLIT_DIR, train_data,
+                              validation_data, test_data)
 
     return train_data, validation_data, test_data
 
