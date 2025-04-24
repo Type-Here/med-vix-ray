@@ -29,7 +29,7 @@ IMAGES_SET_PATHS_AVAILABLE = os.path.join(MIMIC_REPORT_DIR, 'images_set_availabl
 
 # Dataset path
 DATASET_PATH = os.environ.get('MIMIC_DATASET_PATH') # Till "files"-named directory
-# FUSE mounted bucket path
+# FUSE mounted bucket path; (e.g. bucket_name; gs:// will be added in the code)
 BUCKET_PREFIX_PATH = os.environ.get('BUCKET_PREFIX_PATH') # Till "files"-named directory
 # GCP billing project name if Bucket requires billing to requester. If
 try:
@@ -37,6 +37,7 @@ try:
 except (AttributeError, KeyError):
     print("[WARNING] GCP billing project not set. BILLING_PROJECT will be None.")
     BILLING_PROJECT = None # If not set, it will be None
+
 # ================================
 
 # Directory where csv files are stored, containing the dataset information

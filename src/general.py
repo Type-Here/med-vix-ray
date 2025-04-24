@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 import dataset.dataset_handle as dh
 from settings import DOWNLOADED_FILES, DATASET_PATH, MIMIC_LABELS, NUM_WORKERS, \
-    SPLIT_DATASET_DIR, MIMIC_SPLIT_DIR, BATCH_SIZE
+    SPLIT_DATASET_DIR, MIMIC_SPLIT_DIR, BATCH_SIZE, BUCKET_PREFIX_PATH
 from src.preprocess import ImagePreprocessor
 
 """
@@ -97,9 +97,9 @@ def _get_image_paths_from_csv(train_dataset=None, validation_dataset=None,
     Returns:
         tuple(list, list): The training and validation image paths.
     """
-
-    #image_dir = BUCKET_PREFIX_PATH if use_bucket else DATASET_PATH
-    image_dir = DATASET_PATH
+    # BUCKET_PREFIX_PATH is the path to the bucket (e.g. bucket_name; gs:// will be added in the code)
+    image_dir = BUCKET_PREFIX_PATH if use_bucket else DATASET_PATH
+    #image_dir = DATASET_PATH
 
     train_image_paths, validation_image_paths = None, None
     if train_dataset is not None:
