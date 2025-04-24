@@ -1,4 +1,5 @@
 import os
+
 # Radlex Ontology
 RADLEX_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ontology', 'data')
 RADLEX_DATA = os.path.join(RADLEX_DATA_DIR, 'RadLex.owl')
@@ -24,10 +25,19 @@ MIMIC_REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mim
 # Set of the available images in all directories file in pickle format
 IMAGES_SET_PATHS_AVAILABLE = os.path.join(MIMIC_REPORT_DIR, 'images_set_available.pkl')
 
+# ==== ENVIRONMENT VARIABLES ====
+
 # Dataset path
 DATASET_PATH = os.environ.get('MIMIC_DATASET_PATH') # Till "files"-named directory
 # FUSE mounted bucket path
 BUCKET_PREFIX_PATH = os.environ.get('BUCKET_PREFIX_PATH') # Till "files"-named directory
+# GCP billing project name if Bucket requires billing to requester. If
+try:
+    BILLING_PROJECT = os.environ.get('BILLING_PROJECT') # GCP project name
+except (AttributeError, KeyError):
+    print("[WARNING] GCP billing project not set. BILLING_PROJECT will be None.")
+    BILLING_PROJECT = None # If not set, it will be None
+# ================================
 
 # Directory where csv files are stored, containing the dataset information
 DATASET_INFO_CSV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mimic', 'info')
