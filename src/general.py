@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 import dataset.dataset_handle as dh
 from settings import DOWNLOADED_FILES, DATASET_PATH, MIMIC_LABELS, NUM_WORKERS, \
-    SPLIT_DATASET_DIR, MIMIC_SPLIT_DIR, BUCKET_PREFIX_PATH
+    SPLIT_DATASET_DIR, MIMIC_SPLIT_DIR, BATCH_SIZE
 from src.preprocess import ImagePreprocessor
 
 """
@@ -98,7 +98,8 @@ def _get_image_paths_from_csv(train_dataset=None, validation_dataset=None,
         tuple(list, list): The training and validation image paths.
     """
 
-    image_dir = BUCKET_PREFIX_PATH if use_bucket else DATASET_PATH
+    #image_dir = BUCKET_PREFIX_PATH if use_bucket else DATASET_PATH
+    image_dir = DATASET_PATH
 
     train_image_paths, validation_image_paths = None, None
     if train_dataset is not None:
@@ -198,15 +199,23 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
     # Obtain Dataloaders in order to improve performance
     if return_train_loader:
         print("Creating training dataloader...")
-        training_loader = DataLoader(ImagePreprocessor(train_image_paths, train_labels,
-                                     channels_mode="L", return_study_id=return_study_id),
-                                        batch_size=16, shuffle=True,
-                                        num_workers=NUM_WORKERS, pin_memory=pin_memory)
+        training_loader = DataLoader(ImagePreprocessor(
+                                            train_image_paths, train_labels,
+                                            channels_mode="L",
+                                            return_study_id=return_study_id,
+                                            use_bucket=use_bucket),
+                                        batch_size=BATCH_SIZE, shuffle=True,
+                                        num_workers=NUM_WORKERS,
+                                        pin_memory=pin_memory)
     if return_val_loader:
         print("Creating validation dataloader...")
-        valid_loader = DataLoader(ImagePreprocessor(val_image_paths, val_labels,
-                                  channels_mode="L", return_study_id=return_study_id),
-                                        batch_size=16, shuffle=False,
-                                        num_workers=NUM_WORKERS, pin_memory=pin_memory)
+        valid_loader = DataLoader(ImagePreprocessor(
+                                        val_image_paths, val_labels,
+                                        channels_mode="L",
+                                        return_study_id=return_study_id,
+                                        use_bucket=use_bucket),
+                                    batch_size=BATCH_SIZE, shuffle=False,
+                                    num_workers=NUM_WORKERS,
+                                    pin_memory=pin_memory)
 
     return training_loader, valid_loader
