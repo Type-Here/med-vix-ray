@@ -3,7 +3,8 @@ import os
 from torch.utils.data import DataLoader
 
 import dataset.dataset_handle as dh
-from settings import DOWNLOADED_FILES, DATASET_PATH, MIMIC_LABELS, NUM_WORKERS, SPLIT_DATASET_DIR, MIMIC_SPLIT_DIR
+from settings import DOWNLOADED_FILES, DATASET_PATH, MIMIC_LABELS, NUM_WORKERS, \
+    SPLIT_DATASET_DIR, MIMIC_SPLIT_DIR, BUCKET_PREFIX_PATH
 from src.preprocess import ImagePreprocessor
 
 """
@@ -82,21 +83,34 @@ def _load_train_val_sets(all_data=False):
     return train_dataset, validation_dataset
 
 
-def _get_image_paths_from_csv(train_dataset=None, validation_dataset=None):
+def _get_image_paths_from_csv(train_dataset=None, validation_dataset=None,
+                              verify_existence=True, use_bucket=False):
     """
     Fetch image paths from the CSV files for training and validation datasets.
     Note: if the dataset is not provided, it will return None in the tuple
     Args:
         train_dataset (pd.DataFrame): The training dataset.
         validation_dataset (pd.DataFrame): The validation dataset.
+        verify_existence (bool): If True, check if the image paths exist while fetching.
+        use_bucket (bool): If True, use the bucketed dataset in Dataloader.
+        It will change the image_dir path to use a FUSE mounted bucket.
     Returns:
         tuple(list, list): The training and validation image paths.
     """
+
+    image_dir = BUCKET_PREFIX_PATH if use_bucket else DATASET_PATH
+
     train_image_paths, validation_image_paths = None, None
     if train_dataset is not None:
-        train_image_paths = dh.fetch_image_from_csv(train_dataset, DATASET_PATH, csv_kind='train')
+        train_image_paths = dh.fetch_image_from_csv(train_dataset,
+                                                    image_dir_prefix=image_dir,
+                                                    csv_kind='train',
+                                                    use_csv_data_only=(not verify_existence))
     if validation_dataset is not None:
-        validation_image_paths = dh.fetch_image_from_csv(validation_dataset, DATASET_PATH, csv_kind='validation')
+        validation_image_paths = dh.fetch_image_from_csv(validation_dataset,
+                                                         image_dir_prefix=image_dir,
+                                                         csv_kind='validation',
+                                                         use_csv_data_only=(not verify_existence))
 
     return train_image_paths, validation_image_paths
 
@@ -127,7 +141,7 @@ def _get_train_val_labels(train_dataset=None, validation_dataset=None):
 
 def get_dataloaders(return_study_id=False, pin_memory=False,
                     return_train_loader=True, return_val_loader=True,
-                    all_data=False, use_bucket=False):
+                    all_data=False, verify_existence=True, use_bucket=False):
     """
         Get the training and validation dataloaders.
 
@@ -156,6 +170,10 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
             all_data (bool): If True, the function will load the entire dataset using mimic physionet division csv info.
 
             use_bucket (bool): If True, the function will use the bucketed dataset in Dataloader.
+            It will change the image_dir path to use a FUSE mounted bucket.
+
+            verify_existence (bool): If True, the function will check if the image paths
+            exist while fetching paths from csv.
 
         Returns:
             tuple: (DataLoader, DataLoader) for training and validation datasets.
@@ -165,7 +183,9 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
     print("Train and Validation datasets loaded.")
 
     # Obtain Paths
-    train_image_paths, val_image_paths = _get_image_paths_from_csv(train_dataset, validation_dataset)
+    train_image_paths, val_image_paths = _get_image_paths_from_csv(train_dataset, validation_dataset,
+                                                                   verify_existence=verify_existence,
+                                                                   use_bucket=use_bucket)
     if len(train_image_paths) == 0 or len(val_image_paths) == 0:
         print("No images found in the dataset. Check the dataset folder or code.")
         exit(1)
