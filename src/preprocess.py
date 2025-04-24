@@ -124,7 +124,9 @@ class ImagePreprocessor(Dataset):
         Args:
             idx (int): Index of the image to be fetched.
         Returns:
-            tuple: (torch.Tensor, torch.Tensor) where [0] is the preprocessed image tensor and [1] is the corresponding label.
+            tuple: (torch.Tensor, torch.Tensor) where [0] is the preprocessed image tensor
+            and [1] is the corresponding label.
+            If return_study_id is True (in init), it also returns the study_id tensor.
         """
         img_pth = self.image_paths[idx]
         key = img_pth.split("/")[-1].split(".")[0] # Suppose image key is dicom_id from mimic

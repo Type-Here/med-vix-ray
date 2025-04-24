@@ -173,7 +173,7 @@ def baseline_evaluation(testing_dataset):
     model.eval()
 
     # Get all image paths from the test dataset
-    image_paths = dh.fetch_image_from_csv(testing_dataset, DATASET_PATH, csv_kind='test')
+    image_paths = dh.fetch_image_from_csv(testing_dataset, DATASET_PATH, csv_kind='test') # TODO update parameters
     print("Image paths:", image_paths)
 
     # Define the image preprocessing pipeline
