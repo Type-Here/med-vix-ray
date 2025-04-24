@@ -25,11 +25,17 @@ MIMIC_REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mim
 IMAGES_SET_PATHS_AVAILABLE = os.path.join(MIMIC_REPORT_DIR, 'images_set_available.pkl')
 
 # Dataset path
-DATASET_PATH = os.environ.get('MIMIC_DATASET_PATH')
+DATASET_PATH = os.environ.get('MIMIC_DATASET_PATH') # Till "files"-named directory
+# FUSE mounted bucket path
+BUCKET_PREFIX_PATH = os.environ.get('BUCKET_PREFIX_PATH') # Till "files"-named directory
 
 # Directory where csv files are stored, containing the dataset information
 DATASET_INFO_CSV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mimic', 'info')
+
+# Directory where the dataset is split into train, validation, and test sets manually
 SPLIT_DATASET_DIR = os.path.join(DATASET_INFO_CSV_DIR, 'split_dataset')
+# Directory where the dataset is split into train, validation, and test sets
+# from the original dataset platform (PhysioNet)
 MIMIC_SPLIT_DIR = os.path.join(DATASET_INFO_CSV_DIR, 'mimic_split')
 
 # List of Downloaded Files (if partial_list is not empty) .txt file
