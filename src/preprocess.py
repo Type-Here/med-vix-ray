@@ -1,21 +1,89 @@
+import io
 import os
+import random
+import time
 
+import gcsfs
 import torch
 import torchvision.transforms as transforms
+from gcsfs.retry import HttpError
+from google.api_core.exceptions import TooManyRequests
 from torch.utils.data import Dataset
 from PIL import Image
 
+from settings import BILLING_PROJECT, BUCKET_PREFIX_PATH
+import threading
+
+# Lock for thread-safe access to gcsfs client
+_FS_LOCK = threading.Lock()
+# Cache for gcsfs clients
+_FS_CACHE = {}  # one gcsfs client per billing project
+
+
+# ====================== HELPER FUNCTIONS ======================= #
+
+def pil_cloud_open(path, mode="L"):
+    """
+    Open an image file and convert it to the specified mode.
+    Returns a PIL.Image *from local file or gs:// object*.
+    If `billing_project` env variable (see settings.py) is supplied, requester-pays header is added.
+
+    Args:
+        path (str): Path to the image file.
+        mode (str): Mode to convert the image to. Default is "RGB".
+
+    Returns:
+        PIL.Image: Image object in the specified mode, from local file or gs:// object.
+
+    """
+    billing_project = BILLING_PROJECT
+    requester_pays = True if billing_project else False
+
+    if billing_project is None:
+        raise ValueError(
+            "[ERROR]: BILLING_PROJECT is not set. Please set it in your environment variables. - Not implemented yet")
+
+    fs = _FS_CACHE.get(billing_project)
+    with _FS_LOCK:
+        if fs is None:
+            fs = gcsfs.GCSFileSystem(
+                project=billing_project or "auto",
+                requester_pays=requester_pays,
+            )
+            _FS_CACHE[billing_project] = fs
+
+    for attempt in range(3):
+        try:
+            with fs.open(path, "rb") as f:
+                buf = io.BytesIO(f.read())
+            return Image.open(buf).convert(mode)
+
+        except (IOError, HttpError, TooManyRequests, FileNotFoundError) as e:
+            if attempt == 2:  # If it's the last attempt, skip this item
+                print(f"Failed to preprocess image {path} after 3 attempts. Skipping.")
+                raise IndexError(f"Skipping due to repeated failures.")
+            time.sleep((2 ** attempt) + random.random())
+
 
 # Function to resize while maintaining aspect ratio and add padding
-def preprocess_image(image_path, channels_mode="RGB", image_size=(256, 256)):
+def preprocess_image(image_path, channels_mode="RGB", image_size=(256, 256), use_bucket=False):
     """
     Preprocess the image by resizing it while maintaining the aspect ratio and adding padding.
-    :param image_path: Path to the image file.
-    :param channels_mode: RGB or L (grayscale). Default is "RGB".
-    :param image_size: Size of the output image. Default is (256, 256). #
-    :return:
+
+    Args:
+        image_path (str): Path to the image file.
+        channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
+        image_size (tuple[int, int]): Desired output size of the image. Default is (256, 256).
+        use_bucket (bool): If True, use the bucketed dataset in Dataloader.
+    Returns:
+        torch.Tensor: Preprocessed image tensor.
     """
-    img = Image.open(image_path).convert(channels_mode)  # Convert to Specified Channel for ViT compatibility
+    if use_bucket:
+        # Use the cloud open function if "use_bucket" is True
+        img = pil_cloud_open(image_path, mode=channels_mode)
+    else:
+        # Open the image using PIL
+        img = Image.open(image_path).convert(channels_mode) # Convert to Specified Channel for ViT compatibility
 
     # Resizing while maintaining aspect ratio
     aspect_ratio = img.width / img.height
@@ -69,7 +137,7 @@ class ImagePreprocessor(Dataset):
         :rtype: tuple
     """
     def __init__(self, image_paths, image_labels, transform = None, image_size=(256, 256),
-                 channels_mode="RGB", return_study_id=False, check_for_existence=False):
+                 channels_mode="L", return_study_id=False, check_for_existence=False, use_bucket=False):
         """
         Initialize the dataset with image paths, labels and transformations.
         Parameters:
@@ -81,13 +149,23 @@ class ImagePreprocessor(Dataset):
             channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
             return_study_id (bool): If True, the dataloader will return the study_id along with the image and label in the tuple.
             check_for_existence (bool): If True, check if the image paths exist and remove them from the dataset if not.
+            use_bucket (bool): If True, the function will use the bucketed dataset in Dataloader.
             It defaults to False in order to avoid unnecessary checks.
 
         """
 
         self.image_size = image_size
         self.image_labels = image_labels
-        self.image_paths = image_paths
+
+        if not use_bucket:
+            self.image_paths = image_paths
+        else:
+            self.image_paths = [
+                os.path.join("gs://", BUCKET_PREFIX_PATH, rel_path)
+                for rel_path in image_paths
+            ]
+
+        self.use_bucket = use_bucket
 
         if channels_mode not in ["RGB", "L"]:
             raise ValueError("channels_mode must be either 'RGB' or 'L'")
@@ -133,17 +211,16 @@ class ImagePreprocessor(Dataset):
         # Convert labels to Tensor
         label_tensor = torch.tensor(self.image_labels[key], dtype=torch.float)
 
-        res_list = []
+        res_list = [self.transform(img_pth) if self.transform
+                    else preprocess_image(img_pth,
+                                          channels_mode=self.channels_mode,
+                                          use_bucket=self.use_bucket),
+                    label_tensor]
 
-        # use the transform defined in the constructor
-        if self.transform:
-            res_list.append(self.transform(img_pth))
-            res_list.append(label_tensor)
-
+        # Use the transform defined in the constructor
         # If no transform is provided, use the default preprocessing function
-        else:
-            res_list.append(preprocess_image(img_pth, channels_mode=self.channels_mode))
-            res_list.append(label_tensor)
+
+        # Append the label tensor to the result list
 
         # If return_study_id is True, extract the study_id from the path
         if self.return_study_id:
