@@ -9,6 +9,15 @@ import torch.optim as optim
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
 
+# XLA_MOD
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.debug.metrics as met
+import torch_xla.distributed.parallel_loader as pl
+
+#import sys
+#sys.path.append(os.path.expanduser('~/med-vix-ray/'))
+
 # Dataset path
 from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, SWIN_MODEL_DIR
 from settings import NUM_EPOCHS, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
@@ -210,6 +219,9 @@ class SwinMIMICClassifier(nn.Module):
         # Binary Cross-Entropy for multi-label classification
         loss_fn = loss_fn_param
 
+        # 🔁 XLA_MOD – Load batches with parallel loader
+        train_loader = pl.MpDeviceLoader(train_loader, self.device)
+
         for epoch in range(num_epochs):
             self.train()
             running_loss = 0.0
@@ -226,7 +238,9 @@ class SwinMIMICClassifier(nn.Module):
 
                 # Backpropagation
                 loss.backward()
-                optimizer.step()
+
+                # XLA_MOD
+                xm.optimizer_step(optimizer)
 
                 running_loss += loss.item()
 
@@ -376,9 +390,12 @@ if __name__ == "__main__":
 
     # Check for device
     print("Checking for device...")
-    t_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    is_cuda = torch.cuda.is_available()
+
+    # XLA_MOD
+    t_device = xm.xla_device() if xm.xla_device() else torch.device("cpu")
+    is_cuda = t_device.type != 'cpu'
     print(f"Using device: {t_device}")
+    print(f"Is XLA available: {is_cuda}")
 
     # Initialize the SwinMIMICClassifier
     ft_model = SwinMIMICClassifier(device=t_device).to(t_device)

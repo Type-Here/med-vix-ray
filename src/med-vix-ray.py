@@ -4,6 +4,15 @@ import os
 import torch.nn as nn
 import numpy as np
 
+# XLA_MOD
+import torch_xla
+import torch_xla.core.xla_model as xm
+import torch_xla.debug.metrics as met
+import torch_xla.distributed.parallel_loader as pl
+
+#import sys
+#sys.path.append(os.path.expanduser('~/med-vix-ray/'))
+
 import src.train_helpers
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
     MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, \
@@ -848,6 +857,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             print("[WARNING] - No epochs left to train.")
             return
 
+        # 🔁 XLA_MOD – Load batches with parallel loader
+        train_loader = pl.MpDeviceLoader(train_loader, self.device)
+
         for epoch in range(num_epochs):
             self.current_epoch = epoch
             running_loss = 0.0
@@ -885,7 +897,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
                 loss_total = loss_class + loss_reg
                 loss_total.backward()
-                optimizer.step()
+
+                # XLA_MOD
+                xm.optimizer_step(optimizer)
 
                 for i, study_id in enumerate(study_ids):
                     # Update the graph with the new weights.
@@ -924,6 +938,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.eval()
             val_running_loss = 0.0
             val_count = 0
+
+            validation_loader = pl.MpDeviceLoader(validation_loader, self.device)
 
             # Validation loop
             with torch.no_grad():
@@ -1052,9 +1068,13 @@ if __name__ == "__main__":
 
     # Check for device
     print("Checking for device...")
-    t_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    is_cuda = torch.cuda.is_available()
+
+    # XLA_MOD
+    t_device = xm.xla_device() if xm.xla_device() else torch.device("cpu")
+    is_cuda = t_device.type != 'cpu'
+    # torch.cuda.is_available()
     print(f"Using device: {t_device}")
+    print(f"Is XLA available: {is_cuda}")
 
     # Init Model
     med_model = SwinMIMICGraphClassifier(graph_json=data_graph_json, device=t_device).to(t_device)
