@@ -116,7 +116,20 @@ def dataset_handle(partial_list=None):
     labels_csv = _load_labels()
 
     # Merge metadata and labels on the 'study_id' column
-    merged_data = pd.merge(metadata, labels_csv, on='study_id', how='inner')
+    merged_data = pd.merge(metadata, labels_csv, on='study_id', how='inner', suffixes=('_metadata', '_labels'))
+
+    # Automatically resolve conflicts for columns with the same name
+    for col in metadata.columns.intersection(labels_csv.columns):
+        if col + '_metadata' in merged_data.columns and col + '_labels' in merged_data.columns:
+            # Check for conflicts and handle them
+            conflicts = merged_data[merged_data[col + '_metadata'] != merged_data[col + '_labels']]
+            if not conflicts.empty:
+                print(f"[WARNING] Conflicts found in column '{col}': {len(conflicts)} rows")
+                print("[INFO] Keeping metadata values.")
+
+            merged_data[col] = merged_data[col + '_metadata']
+            # Drop the duplicate columns
+            merged_data.drop(columns=[col + '_metadata', col + '_labels'], inplace=True)
 
     # Keep only AP or PA views (ViewPosition column)
     merged_data = merged_data[merged_data['ViewPosition'].isin(['AP', 'PA'])]
@@ -318,11 +331,11 @@ def fetch_image_from_csv(csv_file, image_dir_prefix=DATASET_PATH, csv_kind='trai
     # Create a list to store the image paths
     image_paths = []
 
-    # Check if subject_id column is subject_id or subject_id_x (from splitting)
+   # Rename subject_id_x and study_id_x columns to remove the '_x' suffix if they exist
     if 'subject_id_x' in df.columns:
-        subject_id_col = 'subject_id_x'
-    else:
-        subject_id_col = 'subject_id'
+        df.rename(columns={'subject_id_x': 'subject_id'}, inplace=True)
+    if 'study_id_x' in df.columns:
+        df.rename(columns={'study_id_x': 'study_id'}, inplace=True)
 
     # Modify the pickle file path to include the csv_kind
     image_index = IMAGES_SET_PATHS_AVAILABLE.split('.pkl')[0] + f'_{csv_kind}.pkl'
@@ -331,7 +344,7 @@ def fetch_image_from_csv(csv_file, image_dir_prefix=DATASET_PATH, csv_kind='trai
     if not os.path.exists(image_index) or use_csv_data_only:
         print(f"[INFO] Image index not found or use_csv_data_only is True. Building image index...")
         return __build_image_index_and_fetch_from_csv(image_paths, df,
-                                                          subject_id_col=subject_id_col,
+                                                          subject_id_col="subject_id",
                                                           image_dir_prefix=image_dir_prefix)
     try:
         with open(IMAGES_SET_PATHS_AVAILABLE, 'rb') as f:
@@ -343,7 +356,7 @@ def fetch_image_from_csv(csv_file, image_dir_prefix=DATASET_PATH, csv_kind='trai
         image_index = _build_image_index(image_dir_prefix)
 
     return __fetch_image_paths_only(csv_file, image_dir_prefix, image_paths,
-                                    image_index, df, subject_id_col=subject_id_col)
+                                    image_index, df, subject_id_col="subject_id")
 
 
 def __fetch_image_paths_only(csv_file, image_dir_prefix, image_paths, image_index,
