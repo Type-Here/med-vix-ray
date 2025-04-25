@@ -122,7 +122,7 @@ class SwinMIMICClassifier(nn.Module):
         :argument nn.Module: Inherits from PyTorch's nn.Module class.
     """
 
-    def __init__(self, num_classes=len(MIMIC_LABELS)):  # 14 patologie in MIMIC-CXR
+    def __init__(self, device=None, num_classes=len(MIMIC_LABELS)):  # 14 patologie in MIMIC-CXR
         """
             Initializes the SwinMIMICClassifier src.
             This src uses the Swin V2 architecture for feature extraction and a custom classifier
@@ -143,11 +143,14 @@ class SwinMIMICClassifier(nn.Module):
         )
 
         # Move src to available device (CPU/GPU) # Save device but not change it since instability issues on AMD
-        try:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        except Exception as e:
-            print(f"Error moving model to device: {e}")
-            exit(1)
+        if device:
+            self.device = device
+        else:
+            try:
+                self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            except Exception as e:
+                print(f"Error moving model to device: {e}")
+                exit(1)
 
     def forward(self, x, use_classifier=True):
         # Get features from the backbone (e.g., shape [B, 1024, 8, 8])
@@ -353,8 +356,14 @@ class SwinMIMICClassifier(nn.Module):
 if __name__ == "__main__":
     print("Starting ...")
 
+    # Check for device
+    print("Checking for device...")
+    t_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    is_cuda = torch.cuda.is_available()
+    print(f"Using device: {t_device}")
+
     # Initialize the SwinMIMICClassifier
-    ft_model = SwinMIMICClassifier()
+    ft_model = SwinMIMICClassifier(device=t_device).to(t_device)
 
     SAVE_DIR = os.path.join(MODELS_DIR, "fine_tuned")
 
@@ -368,7 +377,9 @@ if __name__ == "__main__":
         exit(0)
 
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
-    training_loader, valid_loader = general.get_dataloaders()
+    training_loader, valid_loader = general.get_dataloaders(
+        return_study_id=False, pin_memory=is_cuda,
+        use_bucket=True, verify_existence=False, all_data=True)
 
     # Train the model
     print("Starting training...")

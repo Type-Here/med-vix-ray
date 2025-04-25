@@ -974,8 +974,10 @@ if __name__ == "__main__":
         data_graph_json = json.load(file)
 
     # Check for device
+    print("Checking for device...")
     t_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     is_cuda = torch.cuda.is_available()
+    print(f"Using device: {t_device}")
 
     # Init Model
     med_model = SwinMIMICGraphClassifier(graph_json=data_graph_json, device=t_device).to(t_device)
