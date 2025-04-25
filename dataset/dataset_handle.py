@@ -300,8 +300,9 @@ def fetch_image_from_csv(csv_file, image_dir_prefix=DATASET_PATH, csv_kind='trai
         ValueError: If csv_file is neither a DataFrame nor a string.
     """
     if not os.path.exists(image_dir_prefix):
-        print(f"No valid DATASET_PATH: {image_dir_prefix} found. Check Environment variable.")
-        raise FileNotFoundError(f"Image directory {image_dir_prefix} does not exist.")
+        print(f"[WARNING]: No valid DATASET_PATH: {image_dir_prefix} found. Check Environment variable.")
+        # raise FileNotFoundError(f"Image directory {image_dir_prefix} does not exist.")
+
     # Check if csv_file is a DataFrame or a string
     if isinstance(csv_file, pd.DataFrame):
         # If it's a DataFrame, use it directly
@@ -323,12 +324,13 @@ def fetch_image_from_csv(csv_file, image_dir_prefix=DATASET_PATH, csv_kind='trai
     else:
         subject_id_col = 'subject_id'
 
-    # image_index is the path to the pickle file containing the image paths available locally
-    image_index = os.path.join(IMAGES_SET_PATHS_AVAILABLE, f'_{csv_kind}.pkl')
+    # Modify the pickle file path to include the csv_kind
+    image_index = IMAGES_SET_PATHS_AVAILABLE.split('.pkl')[0] + f'_{csv_kind}.pkl'
 
     # Build image index if not provided
     if not os.path.exists(image_index) or use_csv_data_only:
-            return __build_image_index_and_fetch_from_csv(image_paths, df,
+        print(f"[INFO] Image index not found or use_csv_data_only is True. Building image index...")
+        return __build_image_index_and_fetch_from_csv(image_paths, df,
                                                           subject_id_col=subject_id_col,
                                                           image_dir_prefix=image_dir_prefix)
     try:

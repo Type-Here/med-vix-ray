@@ -181,7 +181,9 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
     """
     # Load the dataset with partially downloaded files
     train_dataset, validation_dataset = _load_train_val_sets(all_data=all_data)
-    print("Train and Validation datasets loaded.")
+    print("Train and Validation csv dataset info loaded.")
+    print("Train dataset size:", len(train_dataset))
+    print("Validation dataset size:", len(validation_dataset))
 
     # Obtain Paths
     train_image_paths, val_image_paths = _get_image_paths_from_csv(train_dataset, validation_dataset,
@@ -194,6 +196,8 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
     # Obtain Labels
     train_labels, val_labels = _get_train_val_labels(train_dataset, validation_dataset)
     print("Train and Validation labels loaded.")
+    print("Train labels size:", len(train_labels))
+    print("Validation labels size:", len(val_labels))
 
     training_loader, valid_loader = None, None
     # Obtain Dataloaders in order to improve performance
