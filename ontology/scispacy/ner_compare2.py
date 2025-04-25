@@ -129,34 +129,60 @@ def compare_signs_reports(f_graph_path, f_ner_path, f_metadata_path) -> dict:
     return comparison_results
 
 
+def print_first_10_res(compare_result):
+    print("Results:")
+    # Print the comparison results
+    # Print only the first 10 results for brevity
+    k = 0
+
+    for study_id_key, result in compare_result.items():
+        print(f"Study ID: {study_id_key}")
+        print(result)
+        k += 1
+        if k >= 10:
+            break
+
 
 if __name__ == "__main__":
 
     # Paths of needed files
     print("Loading data...")
     graph_path = MANUAL_GRAPH
-    ner_path = os.path.join(MIMIC_REPORT_DIR, "ner_reports", "save", "keywords_ner_reports_p10.npy.json")
+    ner_dir = os.path.join(MIMIC_REPORT_DIR, "ner_reports", "save")
     metadata_path = os.path.join(MIMIC_REPORT_DIR, "info", "metadata.csv")
 
     print("Comparing signs and reports...")
-    compare_results = compare_signs_reports(graph_path, ner_path, metadata_path)
 
-    print("Comparison completed.")
-    print("Results:")
-    # Print the comparison results
-    # Print only the first 10 results for brevity
-    i = 0
-    for study_id_key, result in compare_results.items():
-        print(f"Study ID: {study_id_key}")
-        print(result)
-        i += 1
-        if i >= 10:
-            break
+    all_results = {}
 
-    print("Saving results...")
-    #Save the results to a JSON file
-    with open('comparison_results_old.json', 'w') as file:
-        json.dump(compare_results, file, indent=4)
+    for ner in os.listdir(ner_dir):
+        if ner.endswith(".json"):
+            print(f" -- Comparing Report {ner}... -- ")
+            ner_path = os.path.join(ner_dir, ner)  # Construct full path
+            compare_results = compare_signs_reports(graph_path, ner_path, metadata_path)
+        else:
+            continue
 
-    print("Results saved to comparison_results_old.json")
-    print("Done.")
+        print(f"Comparison for {ner} completed.")
+        print("Saving results...")
+        # Save the results to a JSON file
+
+        # Extract the number from the filename
+        file_number = ner.split("_")[-1].split(".")[0]
+
+        # Save the results to a JSON file
+        with open(f'comparison_results_{file_number}.json', 'w') as file:
+            json.dump(compare_results, file, indent=4)
+
+        print(f"Results saved to comparison_results_{file_number}.json")
+
+        # Adding the results to all_results
+        all_results.update(compare_results)
+
+    # Create a json file with all the results
+    print("Saving file with all results grouped...")
+    with open('all_comparison_results.json', 'w') as file:
+        json.dump(all_results, file, indent=4)
+    print("All results saved to all_comparison_results.json")
+
+    print("Done. Exiting...")
