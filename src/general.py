@@ -129,11 +129,11 @@ def _get_train_val_labels(train_dataset=None, validation_dataset=None):
     train_labels, val_labels = None, None
     # Convert labels to dictionary
     if train_dataset is not None:
-        train_labels = {train_dataset['dicom_id'][i]: train_dataset[MIMIC_LABELS].iloc[i].tolist()
-                        for i in range(len(train_dataset))}
+      train_labels = {row['dicom_id']: row[MIMIC_LABELS].tolist()
+                      for _, row in train_dataset.iterrows()}
     if validation_dataset is not None:
-        val_labels = {validation_dataset['dicom_id'][i]: validation_dataset[MIMIC_LABELS].iloc[i].tolist()
-                      for i in range(len(validation_dataset))}
+      val_labels = {row['dicom_id']: row[MIMIC_LABELS].tolist()
+                    for _, row in validation_dataset.iterrows()}
     return train_labels, val_labels
 
 
