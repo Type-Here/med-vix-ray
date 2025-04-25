@@ -161,7 +161,7 @@ class ImagePreprocessor(Dataset):
             self.image_paths = image_paths
         else:
             self.image_paths = [
-                os.path.join("gs://", BUCKET_PREFIX_PATH, rel_path)
+                os.path.join("gs://", rel_path)
                 for rel_path in image_paths
             ]
 
