@@ -124,7 +124,7 @@ def _get_train_val_labels(train_dataset=None, validation_dataset=None):
         train_dataset (pd.DataFrame): The training dataset.
         validation_dataset (pd.DataFrame): The validation dataset.
     Returns:
-        tuple(dict, dict): The training and validation labels.
+        tuple[dict, dict]: The training and validation labels.
     """
     train_labels, val_labels = None, None
     # Convert labels to dictionary
@@ -177,11 +177,11 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
             exist while fetching paths from csv.
 
         Returns:
-            tuple: (DataLoader, DataLoader) for training and validation datasets.
+            tuple[DataLoader, DataLoader] for training and validation datasets.
     """
     # Load the dataset with partially downloaded files
     train_dataset, validation_dataset = _load_train_val_sets(all_data=all_data)
-    print("Train and Validation csv dataset info loaded.")
+    print("[INFO] Train and Validation csv dataset info loaded.")
     print("Train dataset size:", len(train_dataset))
     print("Validation dataset size:", len(validation_dataset))
 
@@ -192,8 +192,14 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
     if len(train_image_paths) == 0 or len(val_image_paths) == 0:
         print("No images found in the dataset. Check the dataset folder or code.")
         exit(1)
+    print("[INFO] Train and Validation image paths loaded.")
+    print("Train images size:", len(train_image_paths))
+    print("Validation images size:", len(val_image_paths))
+    print("Train images paths example:", train_image_paths[0])
 
     # Obtain Labels
+    print("[INFO] Obtaining labels...")
+
     train_labels, val_labels = _get_train_val_labels(train_dataset, validation_dataset)
     print("Train and Validation labels loaded.")
     print("Train labels size:", len(train_labels))
