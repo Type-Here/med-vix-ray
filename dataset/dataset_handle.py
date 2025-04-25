@@ -420,10 +420,8 @@ def __build_image_index_and_fetch_from_csv(image_paths, dataframe,
 
         # Construct the full image path
         image_path = os.path.join(image_dir_prefix, folder_path, dicom_id + '.jpg')
-        if os.path.exists(image_path):
-            image_paths.append(image_path)
-        else:
-            print(f"[SKIP] - Missing image: {image_path}")
+
+        image_paths.append(image_path)
 
     # Saving the image paths to a pickle file
     if save:
