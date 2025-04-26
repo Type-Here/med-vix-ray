@@ -152,7 +152,7 @@ class EarlyStopper:
         return False
 
 
-class CustomLRScheduler(torch.optim.lr_scheduler.LRScheduler):
+class CustomLRScheduler:
     """
     Custom learning rate scheduler that handles different parameter groups
     with different scheduling strategies.
@@ -167,7 +167,6 @@ class CustomLRScheduler(torch.optim.lr_scheduler.LRScheduler):
             min_lr: Minimum learning rate
             cooldown: Number of epochs to wait before resuming normal operation
         """
-        super().__init__(optimizer)
         self.optimizer = optimizer
         self.warmup_epochs = warmup_epochs
         self.patience = patience
