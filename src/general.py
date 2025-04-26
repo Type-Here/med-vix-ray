@@ -222,7 +222,7 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
         valid_loader = DataLoader(ImagePreprocessor(
                                         val_image_paths, val_labels,
                                         channels_mode="L",
-                                        return_study_id=return_study_id,
+                                        return_study_id=False,
                                         use_bucket=use_bucket),
                                     batch_size=BATCH_SIZE, shuffle=False,
                                     num_workers=NUM_WORKERS,
