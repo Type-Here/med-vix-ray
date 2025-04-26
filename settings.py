@@ -14,7 +14,7 @@ MANUAL_GRAPH_DIR = os.path.join(RADLEX_GRAPH_DIR, "data")
 MANUAL_GRAPH = os.path.join(MANUAL_GRAPH_DIR, 'graph_gnn.json')
 
 # NER Comparison Keywords with graph
-NER_GROUND_TRUTH = os.path.join(RADLEX_GRAPH_DIR, 'report_keywords', 'comparison_results_old.json')
+NER_GROUND_TRUTH = os.path.join(RADLEX_GRAPH_DIR, 'report_keywords', 'all_comparison_results.json')
 
 # Model Save directory
 MODELS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'models')
@@ -88,9 +88,13 @@ LEARNING_RATE_TRANSFORMER = 1e-5 # For Transformer Blocks
 LEARNING_RATE_CLASSIFIER = 1e-4 # For Classifier Head
 BATCH_SIZE = 16
 
+# Early Stopping
+EARLY_STOPPING_PATIENCE = NUM_EPOCHS // 3 + 1 # Number of epochs with no improvement after which training will be stopped
+# For 10 epochs, 4 epochs of patience; For 5 epochs, 2 epochs of patience
+
 UNBLOCKED_LEVELS = 3 # Number of unblocked levels in the Swin Transformer (from end to start)
 
-SWIN_MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'models', 'gnn_swin')
+SWIN_MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src', 'models', 'finetuned')
 SWIN_MODEL_SAVE_PATH = os.path.join(SWIN_MODEL_DIR, 'swin_model.pth')
 SWIN_STATS_PATH = os.path.join(SWIN_MODEL_DIR, 'src', 'swin_stats.json')
 
