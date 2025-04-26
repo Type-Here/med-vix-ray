@@ -237,6 +237,7 @@ class CustomLRScheduler(torch.optim.lr_scheduler.LRScheduler):
             self.cooldown_counter = self.cooldown
 
             # Apply different reduction factors to different parameter groups
+            # Here is used optimizer.param_groups to get different layers and their learning rates
             for i, group in enumerate(self.optimizer.param_groups):
                 # Swin backbone gets gentler reduction
                 factor = self.factor * 1.5 if i == 0 else self.factor

@@ -905,10 +905,21 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
     def _validate_in_training(self, loss_fn, epoch, validation_loader=None):
         # --- Validation step ---
+        """
+        Validation step for early stopping verification and lr scheduler step.
+        Args:
+            loss_fn (callable): Loss function to compute the validation loss.
+            epoch (int): Current epoch number.
+            validation_loader (DataLoader, optional): DataLoader for the validation dataset.
+        Returns:
+            bool: True if early stopping is triggered, False otherwise.
+        """
         if validation_loader is not None:
             self.eval()
             val_running_loss = 0.0
             val_count = 0
+
+            # Validation loop
             with torch.no_grad():
                 for images_val, labels_val, _ in validation_loader:
                     images_val = images_val.to(self.device)
