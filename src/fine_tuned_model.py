@@ -10,7 +10,7 @@ from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
 
 # Dataset path
-from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR
+from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, SWIN_MODEL_DIR
 from settings import NUM_EPOCHS, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
 from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
 
@@ -235,6 +235,14 @@ class SwinMIMICClassifier(nn.Module):
                 count += 1
 
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss:.4f}")
+            print("Saving model...")
+            # Save the model state after each epoch
+            self.save_model_state(path=SWIN_MODEL_DIR)
+            # Save the model after each epoch
+            self.save_model(path=SWIN_MODEL_SAVE_PATH)
+            print(f"Model saved")
+
+
 
     def _create_optimizer(self, layers_to_unblock, learning_rate_classifier, learning_rate_swin, optimizer_param):
         # Define two parameter groups with different learning rates
@@ -244,7 +252,7 @@ class SwinMIMICClassifier(nn.Module):
             optimizer = optim.Adam([
                 {"params": self.swin_model.layers[-layers_to_unblock:].parameters(),
                  "lr": learning_rate_swin},  # Lower LR for Swin Transformer
-                {"params": self.swin_model.head.parameters(),
+                {"params": self.classifier.parameters(),
                  "lr": learning_rate_classifier}  # Higher LR for classifier head
             ])
         else:
@@ -330,8 +338,18 @@ class SwinMIMICClassifier(nn.Module):
         Args:
             path (str): Path to save the src. Default: SWIN_MODEL_SAVE_PATH.
         """
-        torch.save(self.swin_model.state_dict(), path)
+        torch.save(self, path)
         print(f"Model saved to {path}")
+
+    def save_model_state(self, path=SWIN_MODEL_DIR):
+        """
+        Save the trained src state to a file.
+        Args:
+            path (str): Path to save the src. Default: SWIN_MODEL_SAVE_PATH.
+        """
+        path = os.path.join(path, "finetuned_model_state.pth")
+        torch.save(self.state_dict(), path)
+        print(f"Model state saved to {path}")
 
     def load_model(self, path=SWIN_MODEL_SAVE_PATH):
         """
