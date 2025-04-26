@@ -213,6 +213,11 @@ class GraphAttentionBias(nn.Module):
         return self.min_alpha + (1 - self.min_alpha) * torch.sigmoid(logit)
 
     def forward(self, attn_scores, graph_adj_matrix, layer_idx):
+
+        # If the layer index is less than the first injected layer, return the original attention scores.
+        if layer_idx < self._first_layer_injected:
+            return attn_scores
+
         # If attn_scores is 3D, add a dimension to make it 4D
         if attn_scores.dim() == 3:
             attn_scores = attn_scores.unsqueeze(1)  # Now [B, 1, N, N]
@@ -583,7 +588,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         d_k = d_model // num_heads
         # Initialize the graph bias module.
         self.graph_bias_module = GraphAttentionBias(alpha=ALPHA_GRAPH, conv=self.conv_adapter,
-                                                    d_k=d_k, num_injected_layers=bias_inj_num_layers, total_layers=num_layers)
+                                                    d_k=d_k, num_injected_layers=bias_inj_num_layers,
+                                                    total_layers=num_layers)
 
         print("Initializing attention map modules...")
         # Initialize the AttentionMap module.
@@ -825,7 +831,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self._unblock_layers(layers_to_unblock)
 
         # Define optimizer with parameter groups.
-        optimizer = self._create_optimizer(layers_to_unblock, learning_rate_swin,
+        optimizer = self._create_optimizer(self, layers_to_unblock, learning_rate_swin,
                                            learning_rate_classifier, optimizer_param)
 
         # Attach Custom LR Scheduler
@@ -1075,7 +1081,7 @@ if __name__ == "__main__":
 
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
     training_loader, valid_loader = general.get_dataloaders(return_study_id=True,
-                                                            return_val_loader=False,
+                                                            return_val_loader=True,
                                                             pin_memory=is_cuda,
                                                             use_bucket=True, verify_existence=False, all_data=True)
 
