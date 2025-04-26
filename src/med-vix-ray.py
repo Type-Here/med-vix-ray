@@ -4,15 +4,17 @@ import os
 import torch.nn as nn
 import numpy as np
 
+import src.train_helpers
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
     MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, \
-    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH, INJECT_BIAS_FROM_THIS_LAYER
+    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH, INJECT_BIAS_FROM_THIS_LAYER, EARLY_STOPPING_PATIENCE
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
 
 import xai.attention_map as attention
 import xai.feature_extract as xai_fe
 import xai.edges_stats_update as update_edges
+from src.train_helpers import CustomLRScheduler, EarlyStopper
 
 
 def _compute_batch_features_vectors(features_dict, keys_order=None):
@@ -501,6 +503,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         super(SwinMIMICGraphClassifier, self).__init__(num_classes=num_classes)
 
+        # Set create optimizer to custom function
+        self._create_optimizer = src.train_helpers.create_optimizer
+        # Set placeholder for learning rate scheduler and classifier
+        self._lr_scheduler = None
+        self._early_stopper = None
+
         # Set number of output labels
         self.num_classes = num_classes
         # Set device from init (cpu or cuda)
@@ -783,7 +791,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                     learning_rate_swin=LEARNING_RATE_TRANSFORMER,
                     learning_rate_classifier=LEARNING_RATE_CLASSIFIER,
                     layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None,
-                    loss_fn_param=nn.BCEWithLogitsLoss(), lambda_reg=LAMBDA_REG):
+                    loss_fn_param=nn.BCEWithLogitsLoss(), lambda_reg=LAMBDA_REG,
+                    patience=EARLY_STOPPING_PATIENCE, use_validation=True,
+                    validation_loader=None):
         """
         Custom training loop that incorporates the graph-based loss regularization.
 
@@ -803,6 +813,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             optimizer_param (torch.optim.Optimizer, optional): Optimizer for training. If None, defaults to AdamW.
             loss_fn_param (callable, optional): Loss function. If None, defaults to BCEWithLogitsLoss.
             lambda_reg (float): Regularization parameter for the graph bias term.
+            patience (int): Number of epochs for early stopping.
+            use_validation (bool): Whether to use validation data for early stopping.
+            validation_loader (DataLoader, optional): DataLoader for the validation dataset.
         """
         ## Set the model to training mode.
         self.train()
@@ -814,6 +827,13 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # Define optimizer with parameter groups.
         optimizer = self._create_optimizer(layers_to_unblock, learning_rate_swin,
                                            learning_rate_classifier, optimizer_param)
+
+        # Attach Custom LR Scheduler
+        self._lr_scheduler = CustomLRScheduler(optimizer)
+
+        # Attach EarlyStopping
+        self._early_stopper = EarlyStopper(patience=patience, lr_scheduler=self._lr_scheduler)
+
         loss_fn = loss_fn_param
 
         # Reduce remaining epochs if restarting from a checkpoint.
@@ -872,11 +892,51 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 count += 1
 
             print(f"[TRAIN] Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / count:.4f}")
+
+            # Validation step for early stopping verification and lr scheduler step.
+            if use_validation and self._validate_in_training(loss_fn, epoch, validation_loader=validation_loader):
+                break
+
             # Save model each epoch to not lose progress.
             self.save_all()
 
         # Set the model back to evaluation mode.
         self.eval()
+
+    def _validate_in_training(self, loss_fn, epoch, validation_loader=None):
+        # --- Validation step ---
+        if validation_loader is not None:
+            self.eval()
+            val_running_loss = 0.0
+            val_count = 0
+            with torch.no_grad():
+                for images_val, labels_val, _ in validation_loader:
+                    images_val = images_val.to(self.device)
+                    labels_val = labels_val.to(self.device)
+
+                    val_logits = self.forward(images_val, use_graph_guidance=False)
+                    val_loss = loss_fn(val_logits, labels_val)
+
+                    val_running_loss += val_loss.item()
+                    val_count += 1
+
+            val_loss_epoch = val_running_loss / val_count
+            print(f"[VAL] Epoch {epoch + 1} - Validation Loss: {val_loss_epoch:.4f}")
+        else:
+            val_loss_epoch = None
+
+        # Step the scheduler (even without validation loss, will just do warmup)
+        self._lr_scheduler.step(val_loss=val_loss_epoch)
+
+        # Early stopping
+        if val_loss_epoch is not None:
+            if self._early_stopper.early_stop(val_loss_epoch, self):
+                print(f"[INFO] Early Stopping triggered at epoch {epoch + 1}")
+                return True
+
+        self.train()  # Set back to training mode
+        self.swin_model.train()  # Set the Swin model back to training mode
+        return False
 
     def save_model(self, path=None):
         """
@@ -1003,15 +1063,15 @@ if __name__ == "__main__":
     #    exit(0)
 
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
-    training_loader, _ = general.get_dataloaders(return_study_id=True, return_val_loader=False, pin_memory=is_cuda,
-                                                 use_bucket=True, verify_existence=False, all_data=True)
-    _, valid_loader = general.get_dataloaders(return_study_id=False, return_train_loader=False, pin_memory=is_cuda,
-                                              use_bucket=True, verify_existence=False, all_data=True)
+    training_loader, valid_loader = general.get_dataloaders(return_study_id=True,
+                                                            return_val_loader=False,
+                                                            pin_memory=is_cuda,
+                                                            use_bucket=True, verify_existence=False, all_data=True)
 
     # Train the model
     print("Starting training of Med-ViX-Ray...")
     # NOTE: for other parameters, settings.py defines default values
-    med_model.train_model(training_loader)
+    med_model.train_model(train_loader=training_loader, validation_loader=valid_loader)
 
     # Save the model
     print(f"Saving model to {model_path}...")
