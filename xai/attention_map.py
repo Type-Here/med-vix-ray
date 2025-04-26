@@ -157,16 +157,18 @@ class AttentionMap:
         attention_map = transformer_layer.cpu().detach().numpy()
         # Standard Swin V2: [1, 64, 1024]
         shape = attention_map.shape
-        if len(shape) == 4:
-            _, num_heads, tokens, num_windows = shape
-        elif len(shape) == 3:
-            num_heads, tokens, num_windows = shape
-        else:
-            raise ValueError(f"Invalid attention map shape: {shape}")
-        # num_heads, tokens, num_windows = attention_map.shape
+
         # Remove batch and head
         # shape: [1, 1, 64, 1024] → [64, 1024]
-        attention_map = attention_map[0, 0]
+        if len(shape) == 4:
+            _, num_heads, tokens, num_windows = shape
+            attention_map = attention_map[0, 0]
+        elif len(shape) == 3:
+            num_heads, tokens, num_windows = shape
+            attention_map = attention_map[0]
+        else:
+            raise ValueError(f"Invalid attention map shape: {shape}")
+
         # Average over all heads
         attention_map = np.mean(attention_map, axis=0) # TODO Check if mean is the best option
 
