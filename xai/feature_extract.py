@@ -90,23 +90,54 @@ def extract_heatmap_features(att_map, threshold=SIMILARITY_THRESHOLD):
 
 def __fractal_dimension(z, f_threshold=0.9):
     """
-    Calculate fractal dimension using box-counting.
+    Calculate fractal dimension using box-counting method.
+
+    The fractal dimension quantifies the complexity of the pattern in the binary map.
+    Values typically range from 1.0 (smooth shapes) to 2.0 (highly irregular patterns).
+    It's a measure of how detail in the pattern changes with the scale at which it is measured.
+
+    If the input is a binary map (0s and 1s), the function will use values > 0.5 as the pattern.
 
     Args:
-        z (np.array): Binary map.
-        f_threshold (float): Threshold value for computing the box counts.
+        z (np.array): Binary map or heatmap.
+        f_threshold (float): Threshold for converting to binary. Values less than
+                             this threshold will be counted as part of the pattern.
+
+    Returns:
+        float: The estimated fractal dimension of the pattern.
     """
-    # Convert binary map to boolean mask
-    z_bool = z < f_threshold
+    # 1. Convert input to boolean mask based on threshold
+
+    # If input is already binary (0s and 1s), use values > 0.5 as the pattern
+    # Otherwise use the provided threshold
+    z = np.asarray(z)
+    if np.array_equal(np.unique(z), np.array([0, 1])):
+       mask = z > 0.5                 # Already binary
+    else:
+       mask = z <= f_threshold
+
+    # 2) Box size: 2,4,8,…,128
     sizes = 2 ** np.arange(1, 8)
-    counts = []
-    for size in sizes:
-        # Resize using nearest-neighbor interpolation to count boxes
-        resized = cv2.resize(z_bool.astype(np.uint8), (size, size),
-                             interpolation=cv2.INTER_NEAREST)
-        counts.append(np.sum(resized))
-    coeffs = np.polyfit(np.log(sizes), np.log(counts), 1)
-    return -coeffs[0]
+
+    # 3) Count number of boxes with pattern
+    ns, valid_sizes = [], []
+    # ns is the number of boxes with pattern
+    # valid_sizes is the size of the boxes
+    for s in sizes:
+       reduced = cv2.resize(mask.astype(np.uint8),
+                            (s, s), cv2.INTER_NEAREST)
+       n = np.count_nonzero(reduced)  # boxes with pattern
+       if n:                          # reduce only if non-zero
+           ns.append(n)
+           valid_sizes.append(s)
+
+    # Fail-safe: if no valid sizes, return 1.0
+    if len(valid_sizes) < 2:
+        return 1.0
+
+        # 4) log-log regression (Linear fit)
+    coeffs = np.polyfit(np.log(valid_sizes), np.log(ns), 1)
+    return coeffs[0]
 
 
 def __extract_heatmap_features_single_map_multiregion(att_map, threshold=SIMILARITY_THRESHOLD):
