@@ -306,9 +306,13 @@ class SwinMIMICClassifier(nn.Module):
         all_labels = []
         all_preds = []
 
-        with torch.no_grad():
+        # 🔁 XLA_MOD – Load batches with parallel loader
+        val_loader = pl.MpDeviceLoader(val_loader, self.device)
+
+        with (torch.no_grad()):
             for images, labels in val_loader:
-                #images, labels = images.to(self.device), labels.to(self.device)
+                images = images.to(self.device)
+                labels = labels.to(self.device)
 
                 # Forward pass
                 outputs = self(images)

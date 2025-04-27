@@ -11,6 +11,7 @@ from src.preprocess import ImagePreprocessor
     General utility functions for the project model.
 """
 
+# ========================= MENU OPTIONS =========================
 
 def menu():
     """
