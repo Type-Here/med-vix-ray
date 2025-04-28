@@ -228,12 +228,14 @@ class SwinMIMICClassifier(nn.Module):
             count = 0
 
             for images, labels in train_loader:
-
-                #images, labels = images.to(self.device), labels.to(self.device)
+                images = images.to(self.device)
+                labels = labels.to(self.device)
                 optimizer.zero_grad()
 
                 # Forward pass
                 outputs = self(images)
+                # No need to apply sigmoid since BCEWithLogitsLoss combines a sigmoid layer
+                # and the BCELoss in one single class
                 loss = loss_fn(outputs, labels)
 
                 # Backpropagation
@@ -318,6 +320,7 @@ class SwinMIMICClassifier(nn.Module):
                 outputs = self(images)
 
                 # Convert probabilities to binary predictions
+                outputs = torch.sigmoid(outputs)
                 predicted = (outputs > threshold).cpu().numpy()
                 labels = labels.cpu().numpy()
 

@@ -943,7 +943,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             # Validation loop
             with torch.no_grad():
-                for images_val, labels_val, _ in validation_loader:
+                for images_val, labels_val in validation_loader:
                     images_val = images_val.to(self.device)
                     labels_val = labels_val.to(self.device)
 
