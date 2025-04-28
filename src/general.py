@@ -72,7 +72,7 @@ def _load_train_val_sets(all_data=False):
         train_dataset, _, _ = dh.split_dataset(merged_data, partial_list=partial_list)
 
     try:
-        validation_dataset = dh.load_ready_dataset(phase='validation')
+        validation_dataset = dh.load_ready_dataset(phase='validation', directory=split_dir)
     except FileNotFoundError:
         print("Validation dataset not found. Since Train dataset was created or loaded \n"
               " there should be a validation dataset too.")

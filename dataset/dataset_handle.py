@@ -92,6 +92,7 @@ def load_ready_dataset(phase='train', directory=SPLIT_DATASET_DIR):
     dataset_path = os.path.join(directory, f'{phase}_data.csv')
 
     if os.path.exists(dataset_path):
+        print(f"[INFO] Loading dataset from {dataset_path}...")
         return pd.read_csv(dataset_path)
     else:
         raise FileNotFoundError(f"Dataset file {dataset_path} does not exist.")
@@ -188,6 +189,7 @@ def split_dataset(merged_data, train_ratio=TRAIN_TEST_SPLIT,
         tuple (pd.DataFrame, pd.DataFrame, pd.DataFrame): Tuple containing the training, validation, and test sets.
     """
     if partial_list is None:
+        print("[INFO] Using MIMIC split for dataset.")
         return split_dataset_using_mimic_split(merged_data)
 
     # Check if the ratios sum to 1
@@ -254,11 +256,11 @@ def split_dataset_using_mimic_split(merged_data):
 
     # Split the dataset based on the MIMIC split
     train_data = merged_data[merged_data['split'] == 'train']
-    validation_data = merged_data[merged_data['split'] == 'val']
+    validation_data = merged_data[merged_data['split'] == 'validate']
     test_data = merged_data[merged_data['split'] == 'test']
 
-    if not os.path.exists(MIMIC_SPLIT_DIR):
-        __save_split_datasets(MIMIC_SPLIT_DIR, train_data,
+
+    __save_split_datasets(MIMIC_SPLIT_DIR, train_data,
                               validation_data, test_data)
 
     return train_data, validation_data, test_data
