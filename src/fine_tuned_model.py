@@ -230,13 +230,13 @@ class SwinMIMICClassifier(nn.Module):
                 loss.backward()
                 optimizer.step()
 
-                running_loss += loss.item()
+                running_loss += loss.detach().item()
 
                 if count % 200 == 0:
                     print("Step:", count ," overall steps:", len(train_loader))
                 count += 1
 
-            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss:.4f}")
+            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / len(train_loader):.4f}")
             print("Saving model...")
             # Save the model state after each epoch
             self.save_model_state(path=SWIN_MODEL_DIR)
