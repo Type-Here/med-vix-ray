@@ -86,7 +86,7 @@ NUM_WORKERS = 8 # Number of parallel workers for processing (Threads)
 NUM_EPOCHS = 10
 LEARNING_RATE_TRANSFORMER = 1e-5 # For Transformer Blocks
 LEARNING_RATE_CLASSIFIER = 1e-4 # For Classifier Head
-BATCH_SIZE = 16
+BATCH_SIZE = 128
 
 # Early Stopping
 EARLY_STOPPING_PATIENCE = NUM_EPOCHS // 3 + 1 # Number of epochs with no improvement after which training will be stopped
