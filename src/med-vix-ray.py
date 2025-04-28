@@ -9,6 +9,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.debug.metrics as met
 import torch_xla.distributed.parallel_loader as pl
+import torch_xla.distributed.xla_multiprocessing as xmp
 
 #import sys
 #sys.path.append(os.path.expanduser('~/med-vix-ray/'))
@@ -917,8 +918,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             if use_validation and self._validate_in_training(loss_fn, epoch, validation_loader=validation_loader):
                 break
 
-            # Save model each epoch to not lose progress.
-            self.save_all()
+            # Save model each epoch; xm.get_ordinal() == 0: only save on the first device.
+            if xm.get_ordinal() == 0:
+                # Save model each epoch to not lose progress.
+                self.save_all()
 
         # Set the model back to evaluation mode.
         self.eval()
@@ -1108,7 +1111,16 @@ if __name__ == "__main__":
     # Train the model
     print("Starting training of Med-ViX-Ray...")
     # NOTE: for other parameters, settings.py defines default values
-    med_model.train_model(train_loader=training_loader, validation_loader=valid_loader)
+    #med_model.train_model(train_loader=training_loader, validation_loader=valid_loader)
+
+    def _train_fn(rank, flags):
+        model = SwinMIMICGraphClassifier(graph_json=data_graph_json, device=t_device).to(t_device)
+        model.train_model(flags['train_loader'], num_epochs=flags['num_epochs'],
+                          validation_loader=flags['valid_loader'])
+
+
+    xmp.spawn(_train_fn, args=({"train_loader": training_loader, "valid_loader": valid_loader, "num_epochs": NUM_EPOCHS},),
+              nprocs=8, start_method='fork')
 
     # Save the model
     print(f"Saving model to {model_path}...")

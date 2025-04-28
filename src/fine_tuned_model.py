@@ -14,6 +14,7 @@ import torch_xla
 import torch_xla.core.xla_model as xm
 import torch_xla.debug.metrics as met
 import torch_xla.distributed.parallel_loader as pl
+import torch_xla.distributed.xla_multiprocessing as xmp
 
 #import sys
 #sys.path.append(os.path.expanduser('~/med-vix-ray/'))
@@ -251,12 +252,15 @@ class SwinMIMICClassifier(nn.Module):
                 count += 1
 
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss:.4f}")
+
             print("Saving model...")
-            # Save the model state after each epoch
-            self.save_model_state(path=SWIN_MODEL_DIR)
-            # Save the model after each epoch
-            self.save_model(path=SWIN_MODEL_SAVE_PATH)
-            print(f"Model saved")
+            # Save model each epoch; xm.get_ordinal() == 0: only save on the first device.
+            if xm.get_ordinal() == 0:
+                # Save the model state after each epoch
+                self.save_model_state(path=SWIN_MODEL_DIR)
+                # Save the model after each epoch
+                self.save_model(path=SWIN_MODEL_SAVE_PATH)
+                print(f"Model saved")
 
 
 
@@ -426,7 +430,15 @@ if __name__ == "__main__":
     # Train the model
     print("Starting training...")
     # NOTE: for other parameters, settings.py defines default values
-    ft_model.train_model(training_loader)
+    #ft_model.train_model(training_loader)
+
+    def _train_fn(rank, flags):
+        model = SwinMIMICClassifier(device=t_device).to(t_device)
+        model.train_model(flags['train_loader'], num_epochs=flags['num_epochs'])
+
+
+    xmp.spawn(_train_fn, args=({"train_loader": training_loader, "num_epochs": NUM_EPOCHS}),
+              nprocs=8, start_method='fork')
 
     # Save the model
     print("Saving model...")
