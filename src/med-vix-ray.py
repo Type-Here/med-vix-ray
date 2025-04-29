@@ -7,9 +7,9 @@ import numpy as np
 # XLA_MOD
 import torch_xla
 import torch_xla.core.xla_model as xm
-import torch_xla.debug.metrics as met
 import torch_xla.distributed.parallel_loader as pl
 import torch_xla.distributed.xla_multiprocessing as xmp
+from torch_xla.runtime import global_ordinal
 
 #import sys
 #sys.path.append(os.path.expanduser('~/med-vix-ray/'))
@@ -418,79 +418,55 @@ class GraphNudger(nn.Module):
           - w_{d,s} is the edge weight.
 
         Args:
-            heatmap_features_batch (torch.Tensor): [B, f_dim] tensor of extracted features from the attention map.
-            keys_order (list): List of keys specifying the order in which features should appear.
-            graph (dict): The entire graph with keys "nodes" and "edges". Each sign node in graph["nodes"]
-                          is expected to have "id", "type"=="sign", and "features" (a dict).
-            num_diseases (int): Number of disease (label) nodes.
-            grad_output_batch (torch.Tensor): [B, f_dim] tensor of gradients from the classifier head.
+            heatmap_features_batch (torch.Tensor): [B, f_dim]
+            keys_order (list of str): feature order used in stored sign node features
+            graph (dict): the full graph (nodes + links)
+            num_diseases (int): number of disease classes
+            grad_output_batch (torch.Tensor): [B, f_dim] classifier grad wrt features
 
         Returns:
-            torch.Tensor: A tensor of shape [B, num_diseases] containing the nudging bias for each sample.
+            torch.Tensor: [B, num_diseases] nudging bias
         """
-        nudge_batch_size, f_dim = heatmap_features_batch.shape
-        # Initialize an empty update tensor for the batch.
-        update_list = []
+        device = heatmap_features_batch.device
+        batch, f_dim = heatmap_features_batch.shape
+        nudges = torch.zeros(batch, num_diseases, device=device)
 
-        # Process each sample in the batch.
-        for i in range(nudge_batch_size):
-            # Get the current sample's heatmap feature vector (as a NumPy array).
-            current_vec = heatmap_features_batch[i].cpu().numpy()
-            # Get the corresponding gradient vector (as numpy array).
-            grad_value = grad_output_batch[i].cpu().numpy()  # shape: [f_dim]
-            # Initialize a bias vector for diseases (shape: [num_diseases]).
-            bias_vec = np.zeros(num_diseases, dtype=np.float32)
-            # Loop over each edge in the graph of type 'finding'.
-            for edge in graph["links"]:
-                if edge["relation"] == "finding":
-                    disease_idx = int(edge["source"])  # disease node index
-                    sign_idx = int(edge["target"])  # sign node index
-                    weight = edge.get("weight", 1.0)
-                    self.__compute_bias_dinamically(bias_vec, current_vec, disease_idx,
-                                                   graph, keys_order, sign_idx,
-                                                   weight, grad_value)
-            # Convert bias vector to tensor and append.
-            update_list.append(torch.tensor(bias_vec, dtype=torch.float32, device=heatmap_features_batch.device))
-
-        # Stack updates to form a tensor of shape [B, num_diseases].
-        update_tensor = torch.stack(update_list, dim=0)
-        return update_tensor
-
-    def __compute_bias_dinamically(self, bias_vec, current_vec, disease_idx,
-                                   graph, keys_order, sign_idx, weight, grad_value=None):
-        """
-        Compute the bias for a specific disease node based on the cosine similarity.
-        The bias_vec is updated in place.
-        Args:
-            bias_vec (np.ndarray): The bias vector to be updated.
-            current_vec (np.ndarray): The current heatmap feature vector.
-            disease_idx (int): The index of the disease node.
-            graph (dict): The entire graph with keys "nodes" and "edges".
-            keys_order (list): List of keys specifying the order in which features should appear.
-            sign_idx (int): The index of the sign node.
-            weight (float): The weight of the edge between the disease and sign node.
-        """
-        # Find the corresponding sign node.
+        # Build sign node id → stored feature vector (torch.Tensor)
+        sign_features = {}
         for node in graph["nodes"]:
-            if node.get("type") == "sign" and int(node["id"]) == sign_idx:
-                stored_features = node.get("features", None)
-                if stored_features is None:
-                    return  # No features available for this sign node.
+            if node.get("type") == "sign" and "features" in node:
+                feature_vec = torch.tensor(
+                    [_compute_feature_vector(node["features"], keys=keys_order)],
+                    dtype=torch.float32,
+                    device=device
+                ).squeeze(0)  # [f_dim]
+                sign_features[int(node["id"])] = feature_vec
 
-                # Convert stored features dict to vector.
-                stored_vec = _compute_feature_vector(stored_features, keys=keys_order)  # numpy array
-                # Compute cosine similarity.
-                sim = xai_fe.__cosine_similarity(stored_vec, current_vec)
-                # Normalize similarity to [0,1].
+        # Process each sample
+        for i in range(batch):
+            f_vec = heatmap_features_batch[i]  # [f_dim]
+            grad = grad_output_batch[i]
+            grad_factor = torch.norm(grad)
+
+            for edge in graph["links"]:
+                if edge["relation"] != "finding":
+                    continue
+                d = int(edge["source"])
+                s = int(edge["target"])
+                weight = edge.get("weight", 1.0)
+
+                if s not in sign_features:
+                    continue
+
+                stored_vec = sign_features[s]  # [f_dim]
+
+                # Cosine similarity (normalized to [0,1])
+                sim = torch.nn.functional.cosine_similarity(f_vec, stored_vec, dim=0)
                 sim = (sim + 1.0) / 2.0
 
-                # Incorporate gradient information.
-                # Use the gradient info from the classifier head backpropagation.
-                grad_factor = np.linalg.norm(grad_value)
+                nudges[i, d] += self.eta * weight * sim * grad_factor
 
-                # Accumulate contribution for this disease.
-                bias_vec[disease_idx] += self.eta * weight * sim * grad_factor
-            break  # sign node found, break inner loop
+        return nudges
 
 
 # ========================= SWIN MIMIC + GRAPH CLASSIFIER =========================
