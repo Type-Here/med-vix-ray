@@ -682,13 +682,27 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
     def forward(self, x, use_graph_guidance=True):
         """
-        Forward pass through the model.
-        Note:
-            If graph guidance is active, it assumes the graph bias is already injected into the transformer layers.
-            use_graph_guidance: If True, forward function adds graph nudge from graph nodes.
+        Perform a forward pass through the model with optional graph-guided nudging.
+
         Args:
-            x (torch.Tensor): Input tensor.
-            use_graph_guidance (bool): Whether to use graph guidance.
+            x (torch.Tensor): Input image tensor of shape [B, C, H, W].
+            use_graph_guidance (bool): Whether to apply graph-guided nudging.
+
+        Returns:
+            torch.Tensor: Final logits tensor of shape [B, num_classes].
+
+        Workflow:
+            1. Inject graph bias into attention layers once if enabled.
+            2. Extract base logits from the backbone and classifier head.
+            3. During training:
+                - Extract attention-based heatmap features.
+                - Update graph sign nodes with extracted features and similarity scores.
+            4. If graph guidance is disabled, return raw classifier logits.
+            5. If nudging is active:
+                - Compute a bias vector based on the similarity between extracted features and sign node features.
+                - Add the bias vector to the classifier logits.
+            6. Return the adjusted or base logits.
+
         Note:
             - self.is_using_nudger (bool): If True, nudges the classifier head using the GraphNudger module
             (uses the attention map and stats feature in sign nodes).
@@ -713,36 +727,36 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         if self.training:
             self.classifier_logits.register_hook(self._save_classifier_grad)
 
-        # 4. Generate attention map and extract features.
+        # 4. Extract attention maps and features
         att_maps_batch = self.attention_map_generator.generate_attention_map(self.swin_model, x)
-        features_dict_batch = xai_fe.extract_heatmap_features(att_maps_batch, threshold=ATTENTION_MAP_THRESHOLD)
+        features_dict_batch = xai_fe.extract_attention_batch_multiregion(att_maps_batch, self.device,
+                                                                         threshold=ATTENTION_MAP_THRESHOLD)
 
-        # 4b. If training mode, update the graph with the new features statistics
+        # 4b. Update graph from extracted features
         if self.training:
             # Update the graph with the new feature statistics.
-            xai_fe.update_graph_features(self.graph, features_dict_batch, self.stats_keys, apply_similarity=True)
+            xai_fe.update_graph_features(
+                self.graph,
+                extracted_features=features_dict_batch,
+                apply_similarity=True
+            )
 
         # 1a. If graph guidance is not active return the classifier logits directly.
         if not use_graph_guidance:
             return self.classifier_logits
 
-        # 5. Convert the features dictionary to a feature vector.
-        # _compute_feature_vector returns a numpy array; convert to tensor.
-        f_vec_b = self.__compute_feature_vector(features_dict_batch)  # shape: [B, f_dim]
-        batch_size = base_logits.shape[0]
+        # 5a. Build heatmap_features_batch for nudger
+        heatmap_features_batch = torch.stack([
+            features_dict_batch["intensity"],
+            features_dict_batch["variance"],
+            features_dict_batch["entropy"],
+            features_dict_batch["active_dim"],
+            features_dict_batch["skewness"],
+            features_dict_batch["kurtosis"],
+            features_dict_batch["fractal"],
+        ], dim=1)  # shape [B, 7]
 
-        # If f_vec_b is 1D, we need to stack it to match the batch size.
-        if f_vec_b.ndim == 1:
-            heatmap_features_batch = torch.stack([
-                torch.tensor(f_vec_b, dtype=torch.float32, device=base_logits.device)
-                for _ in range(batch_size)
-            ])  # shape: [B, f_dim]
-
-        else:
-            # If f_vec_b is already 2D, we can use it directly.
-            heatmap_features_batch = f_vec_b
-
-        # 6. Compute the graph bias using the Nudger module.
+        # 5b. Compute the graph bias using the Nudger module.
         # Use the attention map features and stats features.
         if self.is_using_nudger:
 
@@ -751,6 +765,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 grad_output_batch = torch.ones_like(heatmap_features_batch)
             else:
                 grad_output_batch = self.classifier_grad  # [B, f_dim] ideally.
+            grad_output_batch = (
+                self.classifier_grad if self.classifier_grad is not None
+                else torch.ones_like(heatmap_features_batch)
+            )
 
             update_vector = self.graph_nudger(
                 heatmap_features_batch=heatmap_features_batch,
