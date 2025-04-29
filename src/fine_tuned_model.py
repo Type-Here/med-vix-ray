@@ -252,6 +252,8 @@ class SwinMIMICClassifier(nn.Module):
         # Group 2: Classifier head
         if optimizer_param is None:
             optimizer = optim.Adam([
+                {"params": self.swin_model.patch_embed.proj.parameters(),
+                 "lr": learning_rate_classifier},  # Same LR as transformer layers
                 {"params": self.swin_model.layers[-layers_to_unblock:].parameters(),
                  "lr": learning_rate_swin},  # Lower LR for Swin Transformer
                 {"params": self.classifier.parameters(),
