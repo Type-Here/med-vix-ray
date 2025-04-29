@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import cv2
 from scipy.stats import skew, kurtosis
 from settings import SIMILARITY_THRESHOLD
 
@@ -210,19 +209,19 @@ def __update_weighted_mean(prev_mean, new_value, count):
     return (count * prev_mean + new_value) / (count + 1)
 
 
-def _similarity_evaluation_single_node(node, extracted_features):
+def _similarity_evaluation_single_node(node: dict, extracted_features: dict):
     """
-        Compute the similarity between the stored features of a node and the extracted features.
+    Compute cosine similarity between stored node features and current extracted ones.
 
-        Args:
-            node (dict): Node from the JSON graph with features.
-            extracted_features (dict): Features extracted from the attention heatmap.
+    Args:
+        node (dict): Graph node with 'features'.
+        extracted_features (dict): Dict with keys matching stats_keys.
     """
-    stored_vec = _compute_feature_vector(node["features"])
-    extracted_vec = _compute_feature_vector(extracted_features)
-    sim = __cosine_similarity(stored_vec, extracted_vec)
-    sim = (sim + 1.0) / 2.0  # normalize to [0,1]
-    # You can decide whether to update node["similarity"] or leave it as is.
+    keys = ["intensity", "variance", "entropy", "active_dim", "skewness", "kurtosis", "fractal"]  # exclude 'position'
+    stored_vec = torch.tensor([node["features"].get(k, 0.0) for k in keys], dtype=torch.float32)
+    extracted_vec = torch.tensor([extracted_features.get(k, 0.0) for k in keys], dtype=torch.float32)
+
+    sim = __cosine_similarity_torch(stored_vec, extracted_vec)
     node["similarity"] = sim
 
 
@@ -243,69 +242,60 @@ def _similarity_evaluation(graph_json, extracted_features):
     return graph_json
 
 
-def update_graph_features(graph, extracted_features, sign_label, apply_similarity=False):
+def __cosine_similarity_torch(vec1: torch.Tensor, vec2: torch.Tensor) -> float:
     """
-    Update the clinical finding node in the JSON graph with newly extracted features.
-    It supports both single-sample and batched inputs.
+    Cosine similarity between two 1D torch tensors, normalized to [0,1].
+    """
+    sim = torch.nn.functional.cosine_similarity(vec1, vec2, dim=0).item()
+    return (sim + 1.0) / 2.0
 
-    For each node with label == sign_label, update each feature using a weighted moving average.
-    Special handling is done for the "position" feature (a list of 4 values).
+
+def update_graph_features(graph, extracted_features: dict, apply_similarity: bool = False):
+    """
+    Update all sign nodes in the graph using the new extracted features from one batch.
 
     Args:
-        graph (dict): JSON graph data.
-        extracted_features (dict or dict of torch.Tensor):
-            - If single-sample, a dictionary of features (e.g., {"intensity": float, "position": [x_min,x_max,y_min,y_max], ...}).
-            - If batched, a dictionary where each key maps to a torch.Tensor of shape [B] (or [B, 4] for position).
-        sign_label (str): Radiological sign (clinical finding) label to update.
-        apply_similarity (bool): If True, compute similarity between the node and the extracted features.
+        graph (dict): The graph with "nodes".
+        extracted_features (dict): Dictionary of batched features (each key -> [B] or [B, 4]).
+        apply_similarity (bool): Whether to compute similarity between stored and new features.
 
     Returns:
-        dict: Updated graph_json.
+        dict: Updated graph.
     """
-    # Detect batch or single-sample
-    is_batch = any(isinstance(v, torch.Tensor) and v.ndim >= 1 for v in extracted_features.values())
+    batch_size = next(iter(extracted_features.values())).shape[0]
 
-    if is_batch:
-        batch_size = next(iter(extracted_features.values())).shape[0]
-        for i in range(batch_size):
-            single = {
-                k: v[i].item() if v.ndim == 1 else v[i].tolist()
-                for k, v in extracted_features.items()
-            }
-            graph = update_graph_features(graph, single, sign_label, apply_similarity)
-        return graph
+    for i in range(batch_size):
+        sample_features = {
+            k: v[i].item() if v.ndim == 1 else v[i].tolist()
+            for k, v in extracted_features.items()
+        }
 
-    # Now processing a single sample
-    for node in graph["nodes"]:
-        if node.get("label") != sign_label:
-            continue
-
-        # Initialize observation count and feature dict
-        node.setdefault("count", 0)
-        #node.setdefault("features", {})
-
-        for key, value in extracted_features.items():
-            if value is None:
+        for node in graph["nodes"]:
+            if node.get("type") != "sign":
                 continue
 
-            # Init feature if not present
-            if key not in node["features"] or node["count"] == 0:
-                node["features"][key] = value
-            elif key == "position":
-                # Update each of the 4 coordinates
-                node["features"][key] = [
-                    __update_weighted_mean(node["features"][key][i], value[i], node["count"])
-                    for i in range(4)
-                ]
-            else:
-                node["features"][key] = __update_weighted_mean(
-                    node["features"][key], value, node["count"]
-                )
+            node.setdefault("count", 0)
+            node.setdefault("features", {})
 
-        # Optional similarity evaluation
-        if apply_similarity:
-            _similarity_evaluation_single_node(node, extracted_features)
+            for key, value in sample_features.items():
+                if value is None:
+                    continue
 
-        node["count"] += 1  # Only if actually updated
+                if key not in node["features"] or node["count"] == 0:
+                    node["features"][key] = value
+                elif key == "position":
+                    node["features"][key] = [
+                        __update_weighted_mean(node["features"][key][j], value[j], node["count"])
+                        for j in range(4)
+                    ]
+                else:
+                    node["features"][key] = __update_weighted_mean(
+                        node["features"][key], value, node["count"]
+                    )
+
+            if apply_similarity:
+                _similarity_evaluation_single_node(node, sample_features)
+
+            node["count"] += 1
 
     return graph
