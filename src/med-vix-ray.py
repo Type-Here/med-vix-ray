@@ -759,12 +759,6 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # 5b. Compute the graph bias using the Nudger module.
         # Use the attention map features and stats features.
         if self.is_using_nudger:
-
-            if self.classifier_grad is None:
-                # If no gradient has been captured, default to ones.
-                grad_output_batch = torch.ones_like(heatmap_features_batch)
-            else:
-                grad_output_batch = self.classifier_grad  # [B, f_dim] ideally.
             grad_output_batch = (
                 self.classifier_grad if self.classifier_grad is not None
                 else torch.ones_like(heatmap_features_batch)
@@ -854,6 +848,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # 🔁 XLA_MOD – Load batches with parallel loader
         train_loader = pl.MpDeviceLoader(train_loader, self.device)
+        if use_validation and validation_loader:
+            validation_loader = pl.MpDeviceLoader(validation_loader, self.device)
 
         for epoch in range(num_epochs):
             self.current_epoch = epoch
@@ -871,7 +867,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 optimizer.zero_grad()
                 images = images.to(self.device)
                 labels = labels.to(self.device)
-                study_ids = study_ids.to(self.device)
+                #study_ids = study_ids.to(self.device)
 
                 # Reset the classifier gradient to None before each batch.
                 self.classifier_grad = None
@@ -900,10 +896,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                     # Update the graph with the new weights.
                     # This function updates the weights of the edges in the graph based on the classifier logits.
                     self.graph_attention_module.update_edge_weights_with_ground_truth(
-                        self.graph, study_id, labels[i].cpu().numpy()
+                        self.graph, study_id, labels[i].detach().cpu().numpy()
                     )
 
-                running_loss += loss_total.detach().item()
+                running_loss += loss_total.item()
                 count += 1
 
             print(f"[TRAIN] Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / count:.4f}")
@@ -913,8 +909,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 break
 
             # Save model each epoch; xm.get_ordinal() == 0: only save on the first device.
-            if xm.get_ordinal() == 0:
-                # Save model each epoch to not lose progress.
+            if global_ordinal() == 0:
                 self.save_all()
 
         # Set the model back to evaluation mode.
