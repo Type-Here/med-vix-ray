@@ -1,60 +1,186 @@
 import numpy as np
 import torch
 from scipy.stats import skew, kurtosis
-from settings import SIMILARITY_THRESHOLD
+import torch.nn.functional as fc
 
-def extract_attention_batch(attn_maps: torch.Tensor, device: torch.device):
+def _binarize_maps(heatmap: torch.Tensor, threshold: float) -> torch.Tensor:
     """
-    Process a batch of attention maps and extract compact statistical features.
+    Binarize the heatmap given a threshold.
+    Args:
+        heatmap: Tensor [H, W], values in [0,1]
+        threshold: float threshold
+    Returns:
+        binary: FloatTensor [H, W] with 0/1 values
+    """
+    return (heatmap > threshold).float()
+
+def _label_connected_components(binary: torch.Tensor, max_labels: int = 50) -> torch.Tensor:
+    """
+    Label connected components in a binary map via iterative dilation (8-neighborhood).
+    Args:
+        binary: FloatTensor [H, W] of 0/1
+        max_labels: safety cap on number of labels
+    Returns:
+        label_map: IntTensor [H, W] with region labels 1..n
+    """
+    H, W = binary.shape
+    label_map = torch.zeros_like(binary, dtype=torch.int32)
+    remaining = binary.clone()
+    label_id = 1
+
+    # Define a 3x3 kernel for dilation
+    kernel = torch.ones((1, 1, 3, 3), device=binary.device)
+
+    while remaining.sum() > 0 and label_id <= max_labels:
+        seed = (remaining > 0).float()
+        prev_seed = torch.zeros_like(seed)
+        # Expand region until convergence
+        while not torch.equal(seed, prev_seed):
+            prev_seed = seed
+            dilated = fc.conv2d(seed.unsqueeze(0).unsqueeze(0), kernel, padding=1)[0, 0]
+            seed = (dilated > 0).float() * remaining
+        label_map[seed.bool()] = label_id
+        remaining = remaining * (1 - seed)
+        label_id += 1
+
+    return label_map
+
+def _compute_region_stats(heatmap: torch.Tensor, region_mask: torch.Tensor, eps: float = 1e-6) -> dict:
+    """
+    Compute statistics for a single region mask.
+    Args:
+        heatmap: Tensor [H, W], normalized
+        region_mask: FloatTensor [H, W] of 0/1 selecting region
+    Returns:
+        stats: dictionary of region features and area
+    """
+    H, W = heatmap.shape
+    vals = heatmap[region_mask.bool()]
+    area = region_mask.sum().item()
+
+    # Basic stats
+    mean_val = vals.mean()
+    var_val = vals.var(unbiased=False)
+    std_val = torch.sqrt(var_val + eps)
+
+    # Entropy via histogram approximation
+    hist_bins = 32
+    hist = torch.histc(vals, bins=hist_bins, min=0.0, max=1.0) + eps
+    prob = hist / hist.sum()
+    entropy = -torch.sum(prob * torch.log(prob))
+
+    # Skewness and kurtosis (moment-based)
+    centered = vals - mean_val
+    skewness = ((centered ** 3).mean()) / (std_val ** 3 + eps)
+    kurtosis = ((centered ** 4).mean()) / (std_val ** 4 + eps)
+
+    # Active area fraction
+    active_dim = area / (H * W)
+
+    # Fractal fallback
+    fractal = active_dim * (1 + kurtosis.item())
+
+    # Bounding box normalized
+    coords = region_mask.nonzero(as_tuple=False).float()
+    y_min, x_min = coords.min(dim=0)[0] / H
+    y_max, x_max = coords.max(dim=0)[0] / W
+    position = [x_min.item(), x_max.item(), y_min.item(), y_max.item()]
+
+    return {
+        "intensity": mean_val.item(),
+        "variance": var_val.item(),
+        "entropy": entropy.item(),
+        "skewness": skewness.item(),
+        "kurtosis": kurtosis.item(),
+        "active_dim": active_dim,
+        "fractal": fractal,
+        "position": position,
+        "area": area
+    }
+
+def _fallback_stats(heatmap: torch.Tensor, threshold: float, eps: float = 1e-6) -> dict:
+    """
+    Compute fallback statistics using the entire heatmap if no region found.
+    """
+    H, W = heatmap.shape
+    vals = heatmap.flatten()
+    mean_val = vals.mean()
+    var_val = vals.var(unbiased=False)
+    std_val = torch.sqrt(var_val + eps)
+    hist = torch.histc(vals, bins=32, min=0.0, max=1.0) + eps
+    prob = hist / hist.sum()
+    entropy = -torch.sum(prob * torch.log(prob))
+    centered = vals - mean_val
+    skewness = ((centered ** 3).mean()) / (std_val ** 3 + eps)
+    kurtosis = ((centered ** 4).mean()) / (std_val ** 4 + eps)
+    active_dim = (heatmap > threshold).float().mean().item()
+    fractal = active_dim * (1 + kurtosis.item())
+    return {
+        "intensity": mean_val.item(),
+        "variance": var_val.item(),
+        "entropy": entropy.item(),
+        "skewness": skewness.item(),
+        "kurtosis": kurtosis.item(),
+        "active_dim": active_dim,
+        "fractal": fractal,
+        "position": [0.0, 1.0, 0.0, 1.0],
+        "area": H * W
+    }
+
+def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: torch.device,
+                                        threshold: float = 0.3, min_area_frac: float = 0.001):
+    """
+    Multiregion feature extraction from attention maps using PyTorch-only ops.
 
     Args:
-        attn_maps (torch.Tensor): Batch of attention maps with shape [B, num_heads, num_tokens, num_tokens].
-        device (torch.device): Device on which to perform computation.
+        attn_maps (torch.Tensor): [B, 1, H, W] or [B, H, W]
+        device (torch.device): computation device
+        threshold (float): binarization threshold
+        min_area_frac (float): minimum region area fraction
 
     Returns:
-        torch.Tensor: Feature tensor of shape [B, 4], where each feature vector corresponds to:
-                      [entropy, skewness, center_x, center_y].
+        dict[str, torch.Tensor]: features with shapes [B] or [B,4] for 'position'
     """
-    batch_size, num_heads, num_tokens, _ = attn_maps.shape
+    # Ensure correct shape
+    if attn_maps.dim() == 4 and attn_maps.shape[1] == 1:
+        attn_maps = attn_maps.squeeze(1)
+    elif attn_maps.dim() != 3:
+        raise ValueError(f"Expected [B,1,H,W] or [B,H,W], got {attn_maps.shape}")
 
-    # 1. Average over heads
-    attn_maps = attn_maps.mean(dim=1)  # [B, num_tokens, num_tokens]
+    B, H, W = attn_maps.shape
+    features = {k: [] for k in ["intensity", "variance", "entropy", "skewness",
+                                "kurtosis", "active_dim", "fractal", "position"]}
 
-    # 2. Extract attention from CLS token to patches
-    attn_maps = attn_maps[:, 0, 1:]  # [B, num_patches]
+    for i in range(B):
+        heatmap = attn_maps[i]
+        # Normalize per-image
+        heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-6)
+        binary = _binarize_maps(heatmap, threshold)
+        labeled = _label_connected_components(binary)
 
-    # 3. Reshape to spatial grid
-    side = int(num_tokens ** 0.5)
-    attn_maps = attn_maps.reshape(batch_size, side, side)  # [B, side, side]
+        # Extract stats for each region
+        region_stats = []
+        for lbl in range(1, labeled.max().item() + 1):
+            mask = (labeled == lbl).float()
+            if mask.sum().item() < min_area_frac * H * W:
+                continue
+            region_stats.append(_compute_region_stats(heatmap, mask))
 
-    # 4. Normalize attention maps to [0, 1]
-    attn_maps_min = attn_maps.flatten(1).min(dim=1, keepdim=True).unsqueeze(-1)
-    attn_maps_max = attn_maps.flatten(1).max(dim=1, keepdim=True).unsqueeze(-1)
-    attn_maps = (attn_maps - attn_maps_min) / (attn_maps_max - attn_maps_min + 1e-6)
+        # Choose largest or fallback
+        stats = max(region_stats, key=lambda r: r["area"]) if region_stats else _fallback_stats(heatmap, threshold)
 
-    # 5. Compute entropy
-    entropy = -(attn_maps * torch.log(attn_maps + 1e-6)).sum(dim=[1, 2])
+        # Append features
+        for key in features.keys():
+            features[key].append(stats[key])
 
-    # 6. Compute skewness
-    flat_maps = attn_maps.flatten(1)
-    mean = flat_maps.mean(dim=1, keepdim=True)
-    std = flat_maps.std(dim=1, keepdim=True)
-    skewness = ((flat_maps - mean) ** 3).mean(dim=1) / (std.squeeze() ** 3 + 1e-6)
-
-    # 7. Compute center of mass
-    grid_x, grid_y = torch.meshgrid(
-        torch.linspace(0, 1, side, device=device),
-        torch.linspace(0, 1, side, device=device),
-        indexing='ij'
-    )
-    mass = attn_maps.sum(dim=[1, 2]) + 1e-6
-    center_x = (attn_maps * grid_x.unsqueeze(0)).sum(dim=[1, 2]) / mass
-    center_y = (attn_maps * grid_y.unsqueeze(0)).sum(dim=[1, 2]) / mass
-
-    # 8. Stack all features
-    features = torch.stack([entropy, skewness, center_x, center_y], dim=1)  # [B, 4]
-
+    # Convert to tensors
+    for key, vals in features.items():
+        if isinstance(vals[0], torch.Tensor):
+            features[key] = torch.stack(vals).to(device) # type: ignore
+        else:
+            features[key] = torch.tensor(vals, dtype=torch.float32, device=device) # type: ignore
     return features
+
 
 
 def extract_attention_batch_multiregion(attn_maps: torch.Tensor, device: torch.device, threshold: float = 0.6):
