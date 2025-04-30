@@ -81,80 +81,69 @@ def extract_attention_batch_multiregion(attn_maps: torch.Tensor, device: torch.d
     """
     if attn_maps.dim() == 4 and attn_maps.shape[1] == 1:
         attn_maps = attn_maps.squeeze(1)  # [B, H, W]
-    elif attn_maps.dim() == 3:
-        pass  # already fine
-    else:
-        raise ValueError(f"Expected attn_maps to be [B, 1, H, W] or [B, H, W], got {attn_maps.shape}")
 
-    batch, head, win = attn_maps.shape
-    side = head
+    batch, head, wei = attn_maps.shape
+    #side = head
+    eps = 1e-6
 
-    attn_maps_np = attn_maps.detach().cpu().numpy()
-    features = {
-        "intensity": [],
-        "variance": [],
-        "entropy": [],
-        "active_dim": [],
-        "skewness": [],
-        "kurtosis": [],
-        "fractal": [],
-        "position": []
-    }
+    # Normalize maps [0,1]
+    maps = attn_maps.clone()
+    maps_flat = maps.view(batch, -1)
+    min_v = maps_flat.min(dim=1)[0].view(batch, 1, 1)
+    max_v = maps_flat.max(dim=1)[0].view(batch, 1, 1)
+    heatmaps = (maps - min_v) / (max_v - min_v + eps)  # [B, H, W]
 
+    binary_maps = (heatmaps > threshold).float()  # [B, H, W]
+    activated_area = binary_maps.sum(dim=(1, 2)) / (head * wei)
+
+    # Basic statistics
+    mean_val = heatmaps.mean(dim=(1, 2))
+    var_val = heatmaps.var(dim=(1, 2), unbiased=False)
+
+    # Entropy approximation using histogram bins
+    hist_bins = 32
+    hist = torch.histc(heatmaps, bins=hist_bins, min=0.0, max=1.0).unsqueeze(0).expand(batch, -1) + eps
+    prob = hist / hist.sum(dim=1, keepdim=True)
+    entropy = -torch.sum(prob * torch.log(prob), dim=1)
+
+    # Skewness and kurtosis (manual computation)
+    mean = mean_val.view(batch, 1, 1)
+    centered = heatmaps - mean
+    std = torch.sqrt(var_val + eps).view(batch, 1, 1)
+    normed = centered / (std + eps)
+
+    skewness = (normed ** 3).mean(dim=(1, 2))
+    kurtosis_val = (normed ** 4).mean(dim=(1, 2))
+
+    # Bounding box from binary map
+    position = []
     for i in range(batch):
-        map_i = attn_maps_np[i]
-        heatmap = map_i / (np.max(map_i) + 1e-6)
-        binary_map = (heatmap > threshold).astype(np.uint8)
-
-        # Intensity & variance
-        intensity = np.mean(heatmap)
-        variance = np.var(heatmap)
-
-        # Entropy
-        hist, _ = np.histogram(heatmap, bins=256, range=(0, 1))
-        hist += 1e-6
-        prob = hist / np.sum(hist)
-        entropy = -np.sum(prob * np.log(prob))
-
-        # Activated area
-        active_dim = np.sum(binary_map) / heatmap.size
-
-        # Skewness, kurtosis
-        skewness = skew(heatmap.flatten())
-        kurtosis_c = kurtosis(heatmap.flatten())
-
-        # Bounding box
-        activated = np.argwhere(binary_map > 0)
-        if activated.shape[0] > 0:
-            y_min, x_min = activated.min(axis=0)
-            y_max, x_max = activated.max(axis=0)
-            x_min, x_max = x_min / side, x_max / side
-            y_min, y_max = y_min / side, y_max / side
+        mask = binary_maps[i]
+        nonzero = mask.nonzero(as_tuple=False)
+        if nonzero.size(0) > 0:
+            y_min = nonzero[:, 0].min().float() / head
+            y_max = nonzero[:, 0].max().float() / head
+            x_min = nonzero[:, 1].min().float() / wei
+            x_max = nonzero[:, 1].max().float() / wei
         else:
-            x_min, x_max, y_min, y_max = 0, 0, 0, 0
-        position = [x_min, x_max, y_min, y_max]
+            x_min = x_max = y_min = y_max = 0.0
+        position.append([x_min, x_max, y_min, y_max])
 
-        # Fractal (Approx fallback): active_dim * (1 + kurtosis)
-        fractal = active_dim * (1 + kurtosis_c)
+    position_tensor = torch.tensor(position, dtype=torch.float32, device=device)  # [B, 4]
 
-        # Append to batch
-        features["intensity"].append(intensity)
-        features["variance"].append(variance)
-        features["entropy"].append(entropy)
-        features["active_dim"].append(active_dim)
-        features["skewness"].append(skewness)
-        features["kurtosis"].append(kurtosis_c)
-        features["fractal"].append(fractal)
-        features["position"].append(position)
+    # Fractal fallback approximation
+    fractal = activated_area * (1 + kurtosis_val)
 
-    # Convert to tensors
-    for key in features:
-        if key == "position":
-            features[key] = torch.tensor(features[key], dtype=torch.float32, device=device)  # [B, 4]
-        else:
-            features[key] = torch.tensor(features[key], dtype=torch.float32, device=device)  # [B]
-
-    return features
+    return {
+        "intensity": mean_val.to(device),
+        "variance": var_val.to(device),
+        "entropy": entropy.to(device),
+        "active_dim": activated_area.to(device),
+        "skewness": skewness.to(device),
+        "kurtosis": kurtosis_val.to(device),
+        "fractal": fractal.to(device),
+        "position": position_tensor
+    }
 
 
 # ============================= OTHER FUNCTIONS ============================= #
