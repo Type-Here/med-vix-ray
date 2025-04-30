@@ -117,34 +117,48 @@ class AttentionMap:
         """
         model.eval()
 
+        # Get Batch size from input
+        batch = images.shape[0]
+
         # Forward pass
         _ = model(images)
 
         # Retrieve attention weights
-        attn = model.swin_model.layers[layer_idx].blocks[-1].attn.attn_weights  # [B, H, N, N]
-        B, H, N, _ = attn.shape
+        attn = model.layers[layer_idx].blocks[-1].attn.attn_weights  # [B, H, N, N]
 
-        # Mean over heads (axis 1)
-        attn_map = attn.mean(dim=1)  # Now [B, N, N]
+        if attn.dim() == 4:
+            # [B,H,Nw,Np] -> [B,Nw,Np]
+            attn_map = attn.mean(dim=1)
+        elif attn.dim() == 3:
+            # [H,Nw,Np] -> [Nw,Np], poi replicare su B
+            tmp = attn.mean(dim=0)  # [Nw,Np]
+            attn_map = tmp.unsqueeze(0).repeat(batch, 1, 1)  # [B,Nw,Np]
+        else:
+            raise ValueError(f"Unexpected attn shape: {attn.shape}")
 
+        # 2. Use mean across rows to summarize per token
         # Take attention to the class token if needed
         # For Swin no cls_token, so we can average
-        attn_map = attn_map.mean(dim=1)  # [B, N]
+        #    [B,Nw,Np] -> [B,Np]
+        attn_vec = attn_map.mean(dim=1)  # [B, Np]
 
-        # Reconstruct grid
-        win_size = int(N ** 0.5)
-        attn_map = attn_map.view(B, 1, win_size, win_size)  # [B, 1, W, W]
+        # 3. reshape in mappa quadrata
+        batch_, n_p = attn_vec.shape
+        side = int(n_p ** 0.5)
+        if side * side != n_p:
+            raise ValueError(f"Cannot reshape vector of length {n_p} into square (got side={side}).")
+        attn_map2d = attn_vec.view(batch_, 1, side, side)
 
-        # Resize to match input image size
-        attn_map_resized = fc.interpolate(attn_map, size=target_size, mode='bilinear', align_corners=False)
+        # 4 .Resize to match input image size
+        attn_map_resized = fc.interpolate(attn_map2d, size=target_size, mode='bilinear', align_corners=False)
 
-        # Normalize each map individually [0,1]
-        attn_min = attn_map_resized.flatten(2).min(dim=2, keepdim=True)[0]
-        attn_max = attn_map_resized.flatten(2).max(dim=2, keepdim=True)[0]
-        attn_map_norm = (attn_map_resized.flatten(2) - attn_min) / (attn_max - attn_min + 1e-6)
-        attn_map_norm = attn_map_norm.view(B, 1, *target_size)
+        # 5. Normalize each map individually [0,1]
+        flat = attn_map_resized.view(batch_, -1)
+        mn = flat.min(dim=1, keepdim=True)[0]
+        mx = flat.max(dim=1, keepdim=True)[0]
+        norm = (flat - mn) / (mx - mn + 1e-6)
 
-        return attn_map_norm
+        return norm.view(batch_, 1, *target_size)
 
     # ========= ANALYSIS =============
     def analyze_intensity(self, image, is_3d=False):
