@@ -79,12 +79,15 @@ def extract_attention_batch_multiregion(attn_maps: torch.Tensor, device: torch.d
             "position": [B, 4] (x_min, x_max, y_min, y_max)
         }
     """
-    B, H, T, _ = attn_maps.shape
-    attn_maps = attn_maps.mean(dim=1)  # [B, T, T]
-    attn_maps = attn_maps[:, 0, 1:]  # [B, T-1]
+    if attn_maps.dim() == 4 and attn_maps.shape[1] == 1:
+        attn_maps = attn_maps.squeeze(1)  # [B, H, W]
+    elif attn_maps.dim() == 3:
+        pass  # already fine
+    else:
+        raise ValueError(f"Expected attn_maps to be [B, 1, H, W] or [B, H, W], got {attn_maps.shape}")
 
-    side = int((T - 1) ** 0.5)
-    attn_maps = attn_maps.reshape(B, side, side)  # [B, H, W]
+    batch, head, win = attn_maps.shape
+    side = head
 
     attn_maps_np = attn_maps.detach().cpu().numpy()
     features = {
@@ -98,7 +101,7 @@ def extract_attention_batch_multiregion(attn_maps: torch.Tensor, device: torch.d
         "position": []
     }
 
-    for i in range(B):
+    for i in range(batch):
         map_i = attn_maps_np[i]
         heatmap = map_i / (np.max(map_i) + 1e-6)
         binary_map = (heatmap > threshold).astype(np.uint8)
