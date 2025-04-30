@@ -546,7 +546,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # Epoch threshold to activate graph-based mechanisms (both transformer bias & final nudging).
         self.graph_integration_start_epoch = graph_integration_start_epoch
         # Current epoch counter (to be updated during training).
-        self.current_epoch = 0
+        self.current_epoch = -1 # Set to -1 to indicate no training yet.
         # Total epochs; useful for calculating activation timing.
         self.total_epochs = NUM_EPOCHS
         # ner_ground_truth: save as variable to be used in the graph attention bias module.
@@ -853,10 +853,16 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         loss_fn = loss_fn_param
 
         # Reduce remaining epochs if restarting from a checkpoint.
-        num_epochs = num_epochs - self.current_epoch
-        if num_epochs <= 0:
-            print("[WARNING] - No epochs left to train.")
-            return
+        if hasattr(self, 'current_epoch') and self.current_epoch >= 0:
+            num_epochs = num_epochs - self.current_epoch - 1
+
+            if num_epochs <= 0:
+                print("[WARNING] - No epochs left to train!")
+                return
+
+            print(f"[INFO]: Found already partially trained model."
+                  f" - Restarting training from epoch {self.current_epoch + 1}."
+                  f" Remaining epochs: {num_epochs}")
 
         # 🔁 XLA_MOD – Load batches with parallel loader
         train_loader = pl.MpDeviceLoader(train_loader, self.device)
@@ -1003,16 +1009,31 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             graph_json = os.path.join(MODELS_DIR, 'med_vixray_model_graph.json')
 
         # Load the state dict from the specified path.
-        checkpoint = torch.load(state_dict_path, map_location=self.device)
+        checkpoint = torch.load(state_dict_path, map_location=self.device, weights_only=False)
         # Load the model state dict.
         self.load_state_dict(checkpoint["model_state_dict"])
 
-        with open(graph_json, 'r') as graph_file:
-            self.graph = json.load(graph_file)
+        if checkpoint.get("graph") is not None:
+            self.graph = checkpoint["graph"]
+            print(" - Graph loaded from checkpoint.")
+        else:
+            print(" - Graph not found in checkpoint. Using the provided graph JSON.")
+            with open(graph_json, 'r') as graph_file:
+                self.graph = json.load(graph_file)
 
         num_signs = len(self.graph["nodes"]) - len(MIMIC_LABELS)
-        self.graph_matrix = build_adjacency_matrix(self.graph, num_diseases=len(MIMIC_LABELS), num_signs=num_signs)
+
+        if checkpoint.get("graph_matrix") is not None:
+            self.graph = checkpoint["graph_matrix"]
+            print(" - Graph Matrix loaded from checkpoint.")
+        else:
+            print(" - Graph Matrix not found in checkpoint. Building it...")
+            self.graph_matrix = build_adjacency_matrix(self.graph,
+                                                       num_diseases=len(MIMIC_LABELS),
+                                                       num_signs=num_signs)
         # Default: disable training mode.
+        # Current Epoch Defaults to 0 as is implied at least 1 epoch was done before saving
+        self.current_epoch = checkpoint.get("current_epoch", 0)
         self.is_using_nudger = checkpoint.get("is_using_nudger", True)
         self.is_graph_used = checkpoint.get("is_graph_used", False)
         self.eval()
@@ -1053,8 +1074,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         if path is None:
             path = os.path.join(MODELS_DIR, 'med_vixray_model.pth')
-
-        self.save_model(path)
+        try:
+            # Make sure the directory exists
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            self.save_model(path)
+        except Exception as e:
+            print(f"[ERROR] Error saving whole model: {e}")
         self.save_graph(path.replace('.pth', '_graph.json'))
         self.save_state(path.replace('.pth', '_state.pth'))
 
@@ -1097,7 +1122,21 @@ if __name__ == "__main__":
         exit(1)
 
     # Load Model if exists
-    model_path = os.path.join(SAVE_DIR, "med_model.pth")
+    model_path = os.path.join(SAVE_DIR, "med_vixray_model.pth")
+    model_state_path = os.path.join(SAVE_DIR, "med_vixray_model_state.pth")
+    json_graph_path = os.path.join(SAVE_DIR, "med_vixray_graph.json")
+
+    if os.path.exists(model_state_path):
+        print("[INFO] Model State found! Trying to load it...")
+        try:
+            with open(json_graph_path, 'r') as file:
+                data_graph_json = json.load(file)
+        except (FileNotFoundError, OSError):
+            print("[WARNING] Graph JSON file not found. Using default graph.")
+            exit(1)
+
+        med_model.load_model_from_state(state_dict_path=model_state_path, graph_json=data_graph_json)
+        print("[INFO] Model State loaded!")
 
     #if not general.basic_menu_model_option(model_path, med_model):
     #    exit(0)
