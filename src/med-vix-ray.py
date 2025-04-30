@@ -729,7 +729,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # 4. Extract attention maps and features
         att_maps_batch = self.attention_map_generator.generate_attention_map(self.swin_model, x)
-        features_dict_batch = xai_fe.extract_attention_batch_multiregion(att_maps_batch, self.device,
+        features_dict_batch = xai_fe.extract_attention_batch_multiregion_torch(att_maps_batch, self.device,
                                                                          threshold=ATTENTION_MAP_THRESHOLD)
 
         # 4b. Update graph from extracted features
