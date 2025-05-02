@@ -38,6 +38,9 @@ except (AttributeError, KeyError):
     print("[WARNING] GCP billing project not set. BILLING_PROJECT will be None.")
     BILLING_PROJECT = None # If not set, it will be None
 
+SERVICE_ACCOUNT_TOKEN =  None # Service account token for GCP
+# os.environ.get('SERVICE_ACCOUNT_TOKEN', None)
+
 # ================================
 
 # Directory where csv files are stored, containing the dataset information

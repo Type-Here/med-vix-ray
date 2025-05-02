@@ -11,7 +11,7 @@ from google.api_core.exceptions import TooManyRequests
 from torch.utils.data import Dataset
 from PIL import Image
 
-from settings import BILLING_PROJECT, BUCKET_PREFIX_PATH
+from settings import BILLING_PROJECT, BUCKET_PREFIX_PATH, SERVICE_ACCOUNT_TOKEN
 import threading
 
 # Lock for thread-safe access to gcsfs client
@@ -38,6 +38,7 @@ def pil_cloud_open(path, mode="L"):
     """
     billing_project = BILLING_PROJECT
     requester_pays = True if billing_project else False
+    token = SERVICE_ACCOUNT_TOKEN
 
     if billing_project is None:
         raise ValueError(
@@ -49,6 +50,7 @@ def pil_cloud_open(path, mode="L"):
             fs = gcsfs.GCSFileSystem(
                 project=billing_project or "auto",
                 requester_pays=requester_pays,
+                token=token
             )
             _FS_CACHE[billing_project] = fs
 
