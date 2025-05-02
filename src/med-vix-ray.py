@@ -842,7 +842,6 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # Reduce remaining epochs if restarting from a checkpoint.
         if hasattr(self, 'current_epoch') and self.current_epoch >= 0:
-            num_epochs = num_epochs - self.current_epoch - 1
 
             if num_epochs <= 0:
                 print("[WARNING] - No epochs left to train!")
@@ -850,14 +849,18 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             print(f"[INFO]: Found already partially trained model."
                   f" - Restarting training from epoch {self.current_epoch + 1}."
-                  f" Remaining epochs: {num_epochs}")
+                  f" Remaining epochs: {num_epochs - self.current_epoch}")
+
+        else:
+            print("[INFO]: Starting training from scratch.")
+            self.current_epoch = 0
 
         # 🔁 XLA_MOD – Load batches with parallel loader
         train_loader = pl.MpDeviceLoader(train_loader, self.device)
         if use_validation and validation_loader:
             validation_loader = pl.MpDeviceLoader(validation_loader, self.device)
 
-        for epoch in range(num_epochs):
+        for epoch in range(self.current_epoch, num_epochs):
             self.current_epoch = epoch
             running_loss = 0.0
             count = 0
@@ -1022,7 +1025,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                                                        num_signs=num_signs)
         # Default: disable training mode.
         # Current Epoch Defaults to 0 as is implied at least 1 epoch was done before saving
-        self.current_epoch = checkpoint.get("current_epoch", 0)
+        self.current_epoch = checkpoint.get("current_epoch", 0) + 1
         self.is_using_nudger = checkpoint.get("is_using_nudger", True)
         self.is_graph_used = checkpoint.get("is_graph_used", False)
         self.eval()
