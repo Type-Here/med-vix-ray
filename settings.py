@@ -51,6 +51,8 @@ SPLIT_DATASET_DIR = os.path.join(DATASET_INFO_CSV_DIR, 'split_dataset')
 # Directory where the dataset is split into train, validation, and test sets
 # from the original dataset platform (PhysioNet)
 MIMIC_SPLIT_DIR = os.path.join(DATASET_INFO_CSV_DIR, 'mimic_split')
+CSV_METADATA_DIR = os.path.join(DATASET_INFO_CSV_DIR, 'csv_metadata')
+PICKLE_METADATA_DIR = os.path.join(DATASET_INFO_CSV_DIR, 'pickle_metadata')
 
 # List of Downloaded Files (if partial_list is not empty) .txt file
 DOWNLOADED_FILES = os.path.join(DATASET_INFO_CSV_DIR, 'downloaded.txt')
