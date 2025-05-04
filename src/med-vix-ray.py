@@ -1084,8 +1084,10 @@ if __name__ == "__main__":
 
     # Check for device
     print("Checking for device...")
-    t_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    is_cuda = torch.cuda.is_available()
+    t_device = torch.device("cpu" if torch.version.hip else
+                            ("cuda" if torch.cuda.is_available() else "cpu"))
+    is_cuda = torch.cuda.is_available() and not torch.version.hip
+    # ROCm is not supported yet
     print(f"Using device: {t_device}")
 
     # Init Model
@@ -1129,7 +1131,7 @@ if __name__ == "__main__":
     training_loader, valid_loader = general.get_dataloaders(return_study_id=True,
                                                             return_val_loader=True,
                                                             pin_memory=is_cuda,
-                                                            use_bucket=True, verify_existence=False, all_data=True)
+                                                            use_bucket=True, verify_existence=False, full_data=True)
 
     # Train the model
     print("Starting training of Med-ViX-Ray...")

@@ -403,7 +403,7 @@ if __name__ == "__main__":
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
     training_loader, valid_loader = general.get_dataloaders(
         return_study_id=False, pin_memory=is_cuda,
-        use_bucket=True, verify_existence=False, all_data=True)
+        use_bucket=True, verify_existence=False, full_data=True)
 
     # Train the model
     print("Starting training...")
