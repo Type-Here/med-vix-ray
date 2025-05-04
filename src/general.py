@@ -146,3 +146,60 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
                               pin_memory=pin_memory)
 
     return training_loader, valid_loader
+
+
+def get_test_dataloader( pin_memory=False,
+                         full_data=False, verify_existence=False, use_bucket=False, channels_mode="L"):
+    """
+        Get the test dataloader.
+
+        This function loads the test dataset, fetches the image paths and labels and creates the dataloader.
+        The dataset is the same for every model, using settings.py variables to get the paths.
+        Channels mode is present to allow for RGB or grayscale images so also baseline models can be used.
+        Args:
+            channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
+
+            pin_memory (bool): If True, the dataloader will use pinned memory for faster data transfer to GPU.
+
+            full_data (bool): If True, the function will load the entire dataset using mimic physionet division csv info.
+
+            use_bucket (bool): If True, the function will use the bucketed dataset in Dataloader.
+            It will change the image_dir path to use a FUSE mounted bucket.
+
+            verify_existence (bool): If True, the function will check if the image paths
+            exist while fetching paths from csv. (Only for non bucketed dataset)
+
+        Returns:
+            DataLoader for test dataset.
+    """
+    if use_bucket and not full_data:
+        print("[WARNING] Using bucketed dataset with partial data.")
+
+    if use_bucket and verify_existence:
+        print("[WARNING] Using bucketed dataset with verify_existence=True. "
+              "This will not work as the image paths are not verified in the bucket.")
+        verify_existence = False
+
+    print("\n ------------------- ")
+    print("[INFO] Loading test dataset metadata...")
+
+    print("[INFO] Fetching test metadata...")
+    test_metadata = dh.fetch_metadata(phase='test',
+                                      full_data=full_data,
+                                      verify_existence=verify_existence)
+    if len(test_metadata) == 0:
+        print("[ERROR] No images found in the dataset for Testing. "
+              "Check the dataset folder or code.")
+        exit(1)
+
+    print(" - Test metadata size:", len(test_metadata))
+    print(" - Creating test dataloader...")
+    test_loader = DataLoader(ImagePreprocessor
+                             (test_metadata,
+                              channels_mode=channels_mode,
+                              return_study_id=False,
+                              use_bucket=use_bucket),
+                             batch_size=1, shuffle=False,
+                             num_workers=1,
+                             pin_memory=pin_memory)
+    return test_loader
