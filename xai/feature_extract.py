@@ -1,7 +1,11 @@
-import numpy as np
+from typing import Union
+
 import torch
-from scipy.stats import skew, kurtosis
+
 import torch.nn.functional as fc
+from torch import Tensor
+
+# ---- HELPER FUNCTIONS FOR FEATURE EXTRACTION ---- #
 
 def _binarize_maps(heatmap: torch.Tensor, threshold: float) -> torch.Tensor:
     """
@@ -23,7 +27,7 @@ def _label_connected_components(binary: torch.Tensor, max_labels: int = 50) -> t
     Returns:
         label_map: IntTensor [H, W] with region labels 1..n
     """
-    H, W = binary.shape
+    # Ensure binary is a float tensor
     label_map = torch.zeros_like(binary, dtype=torch.int32)
     remaining = binary.clone()
     label_id = 1
@@ -45,17 +49,25 @@ def _label_connected_components(binary: torch.Tensor, max_labels: int = 50) -> t
 
     return label_map
 
-def _compute_region_stats(heatmap: torch.Tensor, region_mask: torch.Tensor, eps: float = 1e-6) -> dict:
+# --- REGION STATS COMPUTATION --- #
+
+def _compute_region_stats(heatmap: torch.Tensor, region_mask: torch.Tensor,
+                          eps: float = 1e-6) -> tuple[Tensor, Union[int, float, bool]]:
     """
     Compute statistics for a single region mask.
     Args:
         heatmap: Tensor [H, W], normalized
         region_mask: FloatTensor [H, W] of 0/1 selecting region
+        eps: small value to avoid division by zero
     Returns:
-        stats: dictionary of region features and area
+        stats: Tensor [F] with features
+        area: int, number of pixels in the region
     """
-    H, W = heatmap.shape
+    heads, wei = heatmap.shape
+
+    # Apply mask to heatmap
     vals = heatmap[region_mask.bool()]
+    # Compute area of the region
     area = region_mask.sum().item()
 
     # Basic stats
@@ -75,289 +87,148 @@ def _compute_region_stats(heatmap: torch.Tensor, region_mask: torch.Tensor, eps:
     kurtosis = ((centered ** 4).mean()) / (std_val ** 4 + eps)
 
     # Active area fraction
-    active_dim = area / (H * W)
+    active_dim = area / (heads * wei)
 
     # Fractal fallback
-    fractal = active_dim * (1 + kurtosis.item())
+    fractal = active_dim * (1 + kurtosis)
 
     # Bounding box normalized
     coords = region_mask.nonzero(as_tuple=False).float()
-    y_min, x_min = coords.min(dim=0)[0] / H
-    y_max, x_max = coords.max(dim=0)[0] / W
+    y_min, x_min = coords.min(dim=0)[0] / heads
+    y_max, x_max = coords.max(dim=0)[0] / wei
     position = [x_min.item(), x_max.item(), y_min.item(), y_max.item()]
 
-    return {
-        "intensity": mean_val.item(),
-        "variance": var_val.item(),
-        "entropy": entropy.item(),
-        "skewness": skewness.item(),
-        "kurtosis": kurtosis.item(),
-        "active_dim": active_dim,
-        "fractal": fractal,
-        "position": position,
-        "area": area
-    }
 
-def _fallback_stats(heatmap: torch.Tensor, threshold: float, eps: float = 1e-6) -> dict:
-    """
-    Compute fallback statistics using the entire heatmap if no region found.
-    """
-    H, W = heatmap.shape
-    vals = heatmap.flatten()
-    mean_val = vals.mean()
-    var_val = vals.var(unbiased=False)
-    std_val = torch.sqrt(var_val + eps)
-    hist = torch.histc(vals, bins=32, min=0.0, max=1.0) + eps
-    prob = hist / hist.sum()
-    entropy = -torch.sum(prob * torch.log(prob))
-    centered = vals - mean_val
-    skewness = ((centered ** 3).mean()) / (std_val ** 3 + eps)
-    kurtosis = ((centered ** 4).mean()) / (std_val ** 4 + eps)
-    active_dim = (heatmap > threshold).float().mean().item()
-    fractal = active_dim * (1 + kurtosis.item())
-    return {
-        "intensity": mean_val.item(),
-        "variance": var_val.item(),
-        "entropy": entropy.item(),
-        "skewness": skewness.item(),
-        "kurtosis": kurtosis.item(),
-        "active_dim": active_dim,
-        "fractal": fractal,
-        "position": [0.0, 1.0, 0.0, 1.0],
-        "area": H * W
-    }
+    # Create a single concatenated tensor with all features in order
+    # returns Tensor[F] where F = 7 scalari + 4 position = 11
+    return torch.cat([
+          mean_val.unsqueeze(0),
+          var_val.unsqueeze(0),
+          entropy.unsqueeze(0),
+          skewness.unsqueeze(0),
+          kurtosis.unsqueeze(0),
+          torch.tensor(active_dim, dtype=torch.float32, device=heatmap.device).unsqueeze(0),
+          fractal.unsqueeze(0),
+          torch.tensor(position, dtype=torch.float32, device=heatmap.device)
+      ]), area  # Return both stats and area
 
+# ================== EXTRACTION FEATURES FUNCTIONS ================= #
+
+# Optimized feature extraction for multiregion attention maps
 def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: torch.device,
-                                        threshold: float = 0.3, min_area_frac: float = 0.001):
+                                              threshold: float = 0.5, min_area_frac: float = 0.001,
+                                              max_regions_per_image: int = 5) -> list[list[Tensor]]:
     """
-    Multiregion feature extraction from attention maps using PyTorch-only ops.
+    Optimized multiregion feature extraction with optional sign matching capability.
 
     Args:
         attn_maps (torch.Tensor): [B, 1, H, W] or [B, H, W]
         device (torch.device): computation device
-        threshold (float): binarization threshold
+        threshold (float): binarization threshold (or 'adaptive' for Otsu-like)
         min_area_frac (float): minimum region area fraction
+        max_regions_per_image (int): max number of regions to extract per image
 
     Returns:
-        dict[str, torch.Tensor]: features with shapes [B] or [B,4] for 'position'
+        list[dict]: list of dictionaries with region features
     """
-    # Ensure correct shape
+
+    # Ensure correct shape and normalize batch at once
     if attn_maps.dim() == 4 and attn_maps.shape[1] == 1:
         attn_maps = attn_maps.squeeze(1)
     elif attn_maps.dim() != 3:
         raise ValueError(f"Expected [B,1,H,W] or [B,H,W], got {attn_maps.shape}")
 
-    B, H, W = attn_maps.shape
-    features = {k: [] for k in ["intensity", "variance", "entropy", "skewness",
-                                "kurtosis", "active_dim", "fractal", "position"]}
-
-    for i in range(B):
-        heatmap = attn_maps[i]
-        # Normalize per-image
-        heatmap = (heatmap - heatmap.min()) / (heatmap.max() - heatmap.min() + 1e-6)
-        binary = _binarize_maps(heatmap, threshold)
-        labeled = _label_connected_components(binary)
-
-        # Extract stats for each region
-        region_stats = []
-        for lbl in range(1, labeled.max().item() + 1):
-            mask = (labeled == lbl).float()
-            if mask.sum().item() < min_area_frac * H * W:
-                continue
-            region_stats.append(_compute_region_stats(heatmap, mask))
-
-        # Choose largest or fallback
-        stats = max(region_stats, key=lambda r: r["area"]) if region_stats else _fallback_stats(heatmap, threshold)
-
-        # Append features
-        for key in features.keys():
-            features[key].append(stats[key])
-
-    # Convert to tensors
-    for key, vals in features.items():
-        if isinstance(vals[0], torch.Tensor):
-            features[key] = torch.stack(vals).to(device) # type: ignore
-        else:
-            features[key] = torch.tensor(vals, dtype=torch.float32, device=device) # type: ignore
-    return features
-
-
-
-def extract_attention_batch_multiregion(attn_maps: torch.Tensor, device: torch.device, threshold: float = 0.6):
-    """
-    Extract all clinically-relevant attention-based features for each image in batch.
-    Matches the structure expected by the graph ("features" field in sign nodes).
-
-    Args:
-        attn_maps (torch.Tensor): Attention maps [B, num_heads, T, T].
-        device (torch.device): Device.
-        threshold (float): Binarization threshold.
-
-    Returns:
-        dict: {
-            "intensity": [B],
-            "variance": [B],
-            "entropy": [B],
-            "active_dim": [B],
-            "skewness": [B],
-            "kurtosis": [B],
-            "fractal": [B],
-            "position": [B, 4] (x_min, x_max, y_min, y_max)
-        }
-    """
-    if attn_maps.dim() == 4 and attn_maps.shape[1] == 1:
-        attn_maps = attn_maps.squeeze(1)  # [B, H, W]
-
     batch, head, wei = attn_maps.shape
-    #side = head
-    eps = 1e-6
+    # features = {k: [] for k in ["intensity", "variance", "entropy", "skewness",
+    #                            "kurtosis", "active_dim", "fractal", "position"]}
 
-    # Normalize maps [0,1]
-    maps = attn_maps.clone()
-    maps_flat = maps.view(batch, -1)
-    min_v = maps_flat.min(dim=1)[0].view(batch, 1, 1)
-    max_v = maps_flat.max(dim=1)[0].view(batch, 1, 1)
-    heatmaps = (maps - min_v) / (max_v - min_v + eps)  # [B, H, W]
+    # Batch normalize at once
+    batch_min = attn_maps.view(batch, -1).min(dim=1)[0].view(batch, 1, 1)
+    batch_max = attn_maps.view(batch, -1).max(dim=1)[0].view(batch, 1, 1)
+    normalized_maps = (attn_maps - batch_min) / (batch_max - batch_min + 1e-6)
 
-    binary_maps = (heatmaps > threshold).float()  # [B, H, W]
-    activated_area = binary_maps.sum(dim=(1, 2)) / (head * wei)
+    # Use adaptive threshold if requested (Otsu-like: variance maximization)
+    if threshold == 'adaptive':
+        thresholds = []
+        for i in range(batch):
+            hist = torch.histc(normalized_maps[i], bins=256, min=0, max=1)
+            cum_hist = torch.cumsum(hist, dim=0)
+            total = cum_hist[-1]
 
-    # Basic statistics
-    mean_val = heatmaps.mean(dim=(1, 2))
-    var_val = heatmaps.var(dim=(1, 2), unbiased=False)
+            sum_total = torch.sum(torch.arange(256, device=device) * hist) / 256
+            w_bg = cum_hist / total
+            w_fg = 1 - w_bg
 
-    # Entropy approximation using histogram bins
-    hist_bins = 32
-    hist = torch.histc(heatmaps, bins=hist_bins, min=0.0, max=1.0).unsqueeze(0).expand(batch, -1) + eps
-    prob = hist / hist.sum(dim=1, keepdim=True)
-    entropy = -torch.sum(prob * torch.log(prob), dim=1)
+            # Avoid division by zero
+            w_bg = torch.where(w_bg < 1e-6, torch.ones_like(w_bg), w_bg)
+            w_fg = torch.where(w_fg < 1e-6, torch.ones_like(w_fg), w_fg)
 
-    # Skewness and kurtosis (manual computation)
-    mean = mean_val.view(batch, 1, 1)
-    centered = heatmaps - mean
-    std = torch.sqrt(var_val + eps).view(batch, 1, 1)
-    normed = centered / (std + eps)
+            mean_bg = torch.cumsum(torch.arange(256, device=device) * hist, dim=0) / (256 * cum_hist + 1e-6)
+            mean_fg = (sum_total - torch.cumsum(torch.arange(256, device=device) * hist, dim=0)) / (
+                        256 * (total - cum_hist) + 1e-6)
 
-    skewness = (normed ** 3).mean(dim=(1, 2))
-    kurtosis_val = (normed ** 4).mean(dim=(1, 2))
+            variance = w_bg * w_fg * (mean_bg - mean_fg) ** 2
+            thresh_idx = torch.argmax(variance)
+            thresholds.append((thresh_idx / 255).item())
+    else:
+        thresholds = [threshold] * batch
 
-    # Bounding box from binary map
-    position = []
+    return_features = []
+
+    # Process each image
     for i in range(batch):
-        mask = binary_maps[i]
-        nonzero = mask.nonzero(as_tuple=False)
-        if nonzero.size(0) > 0:
-            y_min = nonzero[:, 0].min().float() / head
-            y_max = nonzero[:, 0].max().float() / head
-            x_min = nonzero[:, 1].min().float() / wei
-            x_max = nonzero[:, 1].max().float() / wei
-        else:
-            x_min = x_max = y_min = y_max = 0.0
-        position.append([x_min, x_max, y_min, y_max])
+        heatmap = normalized_maps[i] # Normalized heatmap [H, W]
+        binary = _binarize_maps(heatmap, thresholds[i]) # Binary map [H, W]
+        labeled = _label_connected_components(binary, max_labels=10)  # Limit max regions
 
-    position_tensor = torch.tensor(position, dtype=torch.float32, device=device)  # [B, 4]
+        # Extract stats for top regions by size
+        regions = []
+        for lbl in range(1, labeled.max().item() + 1):
+            # Create a mask for the current region
+            mask = (labeled == lbl).float()
+            area = mask.sum().item()
+            if area < min_area_frac * head * wei:
+                continue
 
-    # Fractal fallback approximation
-    fractal = activated_area * (1 + kurtosis_val)
+            # Here stats are computed for each region
+            region_stats, area = _compute_region_stats(heatmap, mask)
+            regions.append((area,region_stats))
 
-    return {
-        "intensity": mean_val.to(device),
-        "variance": var_val.to(device),
-        "entropy": entropy.to(device),
-        "active_dim": activated_area.to(device),
-        "skewness": skewness.to(device),
-        "kurtosis": kurtosis_val.to(device),
-        "fractal": fractal.to(device),
-        "position": position_tensor
-    }
+        # Sort by area (descending) and take top K
+        if len(regions) > max_regions_per_image:
+            regions.sort(key=lambda x: x[0], reverse=True)
+            regions = regions[:max_regions_per_image] # Keep only top K regions
+
+        elif not regions:
+            # Fallback to global stats
+            # If no regions found, compute global stats
+            mask = torch.ones_like(heatmap, dtype=torch.float32)
+            stats, area = _compute_region_stats(heatmap, mask)
+            # Wrap in a list to match the expected output format
+            regions.append((area,stats))
+
+        return_features.append([x for _, x in regions])  # Extract only the stats
+
+    return return_features # list of B elements, each with a list of region features
 
 
 # ============================= OTHER FUNCTIONS ============================= #
 
-def compute_sign_bias(graph_json, num_diseases):
-    """
-    Compute an extra bias vector for disease nodes based on the connected sign nodes.
-    Returns a numpy array of shape (num_diseases,).
-    Note:
-        - num_diseases is equal to the number of labels of the model.
-
-    Note:
-        - Assumes that the graph_json contains edges of type 'finding' and nodes of type 'sign'.
-        - It also assumes that findings relations have source as disease and target as sign.
-
-    Args:
-        graph_json (dict): JSON graph data.
-        num_diseases (int): Number of disease nodes.
-
-    Returns:
-        np.array: Bias vector for disease nodes.
-    """
-    # Initialize bias vector for diseases.
-    bias = np.zeros(num_diseases, dtype=np.float32)
-
-    # Iterate over edges of type 'finding'.
-    for edge in graph_json["links"]:
-        if edge["relation"] == "finding":
-            disease_idx = int(edge["source"])  # disease index
-            sign_idx = int(edge["target"])  # sign index
-            weight = edge.get("weight", 1.0)
-            # Find the corresponding sign node in graph_json["nodes"].
-            # We assume that sign nodes have an attribute "type"=="sign"
-            for node in graph_json["nodes"]:
-                if node.get("relation") == "sign" and int(node["id"]) == sign_idx:
-                    similarity = node.get("similarity", 1.0)
-                    # Accumulate the contribution.
-                    bias[disease_idx] += weight * similarity
-                    break  # found the sign node, move to next edge
-    return bias  # shape (num_diseases,)
-
-
-def __update_weighted_mean(prev_mean, new_value, count):
-    """
-    Update a running mean using a weighted moving average.
-
-    Args:
-        prev_mean (float): Previous mean value.
-        new_value (float): New observation.
-        count (int): Number of observations before the new one.
-
-    Returns:
-        float: Updated mean value.
-    """
-    return (count * prev_mean + new_value) / (count + 1)
-
-
-def _similarity_evaluation_single_node(node: dict, extracted_features: dict):
+def _similarity_evaluation_single_node(node: dict, extracted_features_one_region: Tensor):
     """
     Compute cosine similarity between stored node features and current extracted ones.
 
     Args:
         node (dict): Graph node with 'features'.
-        extracted_features (dict): Dict with keys matching stats_keys.
-    """
-    keys = ["intensity", "variance", "entropy", "active_dim", "skewness", "kurtosis", "fractal"]  # exclude 'position'
-    stored_vec = torch.tensor([node["features"].get(k, 0.0) for k in keys], dtype=torch.float32)
-    extracted_vec = torch.tensor([extracted_features.get(k, 0.0) for k in keys], dtype=torch.float32)
-
-    sim = __cosine_similarity_torch(stored_vec, extracted_vec)
-    node["similarity"] = sim
-
-
-def _similarity_evaluation(graph_json, extracted_features):
-    """
-    Compute the similarity between the stored features of each node and the extracted features.
-
-    Args:
-        graph_json (dict): JSON graph data.
-        extracted_features (dict): Features extracted from the attention heatmap.
+        extracted_features_one_region (Tensor): Dict with keys matching stats_keys.
 
     Returns:
-        dict: Updated graph JSON with similarity scores for each node.
+        float: Cosine similarity between stored and extracted features.
     """
-    for node in graph_json["nodes"]:
-        if node.get("type") == "sign":
-            _similarity_evaluation_single_node(node, extracted_features)
-    return graph_json
+    keys = ["intensity", "variance", "entropy", "active_dim", "skewness", "kurtosis", "fractal", "position"]  # exclude 'position'
+    stored_vec = torch.tensor([node["features"].get(k, 0.0) for k in keys], dtype=torch.float32)
+
+    return __cosine_similarity_torch(stored_vec, extracted_features_one_region)
 
 
 def __cosine_similarity_torch(vec1: torch.Tensor, vec2: torch.Tensor) -> float:
@@ -368,52 +239,129 @@ def __cosine_similarity_torch(vec1: torch.Tensor, vec2: torch.Tensor) -> float:
     return (sim + 1.0) / 2.0
 
 
-def update_graph_features(graph, extracted_features: dict, apply_similarity: bool = False):
+# ---- UPDATE GRAPH USING MULTI-REGIO, MULTISIGNS EXTRACT FUNCTION ---- #
+
+def find_match_and_update_graph_features(graph, extracted_features, device, stats_keys=None,
+                                         update_features=True, is_inference=False):
     """
-    Update all sign nodes in the graph using the new extracted features from one batch.
+    Updates the graph nodes (type="sign") with feature statistics from matched regions.
 
     Args:
-        graph (dict): The graph with "nodes".
-        extracted_features (dict): Dictionary of batched features (each key -> [B] or [B, 4]).
-        apply_similarity (bool): Whether to compute similarity between stored and new features.
+        graph (dict): Graph JSON containing "nodes" (and optionally "links").
+        extracted_features (list[list[Tensor]]): List of lists of feature dictionaries.
+        device (torch.device): Device for tensor operations.
+        First list is over batch, second is over regions for each image.
+        The tensor contains all stats features in tensors.
+        stats_keys (list of str, optional): Keys to update. Defaults to a standard set.
+        update_features (bool): If True, update the graph features of the most similar node.
+        is_inference (bool): If True, return detected signs per sample.
 
     Returns:
-        dict: Updated graph.
+        dict: The updated graph.
     """
-    batch_size = next(iter(extracted_features.values())).shape[0]
+    stats_keys = stats_keys or ["intensity", "variance", "entropy", "active_dim",
+                                "skewness", "kurtosis", "fractal", "position"]
 
-    for i in range(batch_size):
-        sample_features = {
-            k: v[i].item() if v.ndim == 1 else v[i].tolist()
-            for k, v in extracted_features.items()
-        }
+    signs_found = {}
 
-        for node in graph["nodes"]:
-            if node.get("type") != "sign":
-                continue
+    sign_vecs = []  # List to store sign vectors
+    sign_ids = []  # List to store sign IDs
+    sign_labels = []  # List to store sign labels
+    for node in graph["nodes"]:
+        if node.get("type") != "sign":
+            continue
 
-            node.setdefault("count", 0)
-            node.setdefault("features", {})
+        # Set default values for node features
+        node.setdefault("count", 0)
 
-            for key, value in sample_features.items():
-                if value is None:
-                    continue
+        vec = torch.tensor([node["features"].get(k, 0.0) for k in stats_keys], device=device)
+        sign_vecs.append(vec)
+        sign_ids.append(node["id"])
+        sign_labels.append(node["label"])
 
-                if key not in node["features"] or node["count"] == 0:
-                    node["features"][key] = value
-                elif key == "position":
-                    node["features"][key] = [
-                        __update_weighted_mean(node["features"][key][j], value[j], node["count"])
-                        for j in range(4)
-                    ]
-                else:
-                    node["features"][key] = __update_weighted_mean(
-                        node["features"][key], value, node["count"]
-                    )
+    # Stack the vectors to create a 2D tensor
+    sign_vecs = torch.stack(sign_vecs)  # [N_signs, F]
 
-            if apply_similarity:
-                _similarity_evaluation_single_node(node, sample_features)
+    for i, regions_list in enumerate(extracted_features):
+        if is_inference:
+            signs_found[i] = {}
 
-            node["count"] += 1
+        for feature_tensor in regions_list:
+            # Calculate cosine similarity all at once
+            sims = fc.cosine_similarity(feature_tensor.unsqueeze(0), sign_vecs, dim=1)
 
+            # Get the most similar sign
+            most_similar_idx = torch.argmax(sims).item()
+            matched_id = sign_ids[most_similar_idx]
+            node = next(n for n in graph["nodes"] if n["id"] == matched_id)
+
+            if update_features: # In training mode
+                __update_most_similar_node(node, feature_tensor, stats_keys)
+
+            if is_inference: # In inference mode, store the results
+                if i not in signs_found:
+                    signs_found[i] = []
+                signs_found[i].append({
+                    "id": sign_ids[most_similar_idx],
+                    "similarity": sims[most_similar_idx].item(),
+                    "label": sign_labels[most_similar_idx],
+                    "stats": __from_tensor_to_dict(feature_tensor, stats_keys)
+                })
+
+    if is_inference:
+        return graph, signs_found
     return graph
+
+def __from_tensor_to_dict(tensor, keys):
+    """
+    Convert a tensor of clinical signs stats to a dictionary using the provided keys.
+    Args:
+        tensor (Tensor): The tensor to convert.
+        keys (list of str): The keys to use for the dictionary.
+    Returns:
+        dict: The converted dictionary.
+    """
+    dict_result = {}
+    for i, key in enumerate(keys):
+        if key == "position":
+            pos_start = len(keys) - 1  # last is 'position'
+            dict_result["position"] = tensor[pos_start:].tolist()
+            #dict_result[key] = tensor[-4:].tolist()
+        else:
+            dict_result[key] = tensor[i].item()
+    return dict_result
+
+def __update_most_similar_node(node, feature_tensor, stats_keys):
+    """
+    Update the most similar node with the new feature tensor.
+    Tensor contains all stats features in order of stats_keys parameter.
+    Position parameter is a list of 4 elements which are the last 4 elements of the tensor.
+    It also updates the node count.
+    Args:
+        node (dict): The node to update.
+        feature_tensor (Tensor): The new feature tensor.
+        stats_keys (list of str): Keys to update in the node features.
+    """
+    # Update the node features with the new feature tensor
+    for i, key in enumerate(stats_keys):
+        if key == "position":
+            # Handle position as 4-dim vector
+            pos_values = feature_tensor[-4:].tolist()
+            if key not in node["features"] or node["count"] == 0:
+                node["features"][key] = pos_values
+            else:
+                node["features"][key] = [
+                    (node["count"] * node["features"][key][j] + pos_values[j]) / (node["count"] + 1)
+                    for j in range(4)
+                ]
+        else:
+            new_val = feature_tensor[i].item()
+            if key not in node["features"] or node["count"] == 0:
+                node["features"][key] = new_val
+            else:
+                # Weighted moving average update
+                prev = node["features"][key]
+                count = node["count"]
+                node["features"][key] = (count * prev + new_val) / (count + 1)
+
+    node["count"] += 1
