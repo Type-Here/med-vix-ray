@@ -408,79 +408,55 @@ class GraphNudger(nn.Module):
           - w_{d,s} is the edge weight.
 
         Args:
-            heatmap_features_batch (torch.Tensor): [B, f_dim] tensor of extracted features from the attention map.
-            keys_order (list): List of keys specifying the order in which features should appear.
-            graph (dict): The entire graph with keys "nodes" and "edges". Each sign node in graph["nodes"]
-                          is expected to have "id", "type"=="sign", and "features" (a dict).
-            num_diseases (int): Number of disease (label) nodes.
-            grad_output_batch (torch.Tensor): [B, f_dim] tensor of gradients from the classifier head.
+            heatmap_features_batch (torch.Tensor): [B, f_dim]
+            keys_order (list of str): feature order used in stored sign node features
+            graph (dict): the full graph (nodes + links)
+            num_diseases (int): number of disease classes
+            grad_output_batch (torch.Tensor): [B, f_dim] classifier grad wrt features
 
         Returns:
-            torch.Tensor: A tensor of shape [B, num_diseases] containing the nudging bias for each sample.
+            torch.Tensor: [B, num_diseases] nudging bias
         """
-        nudge_batch_size, f_dim = heatmap_features_batch.shape
-        # Initialize an empty update tensor for the batch.
-        update_list = []
+        device = heatmap_features_batch.device
+        batch, f_dim = heatmap_features_batch.shape
+        nudges = torch.zeros(batch, num_diseases, device=device)
 
-        # Process each sample in the batch.
-        for i in range(nudge_batch_size):
-            # Get the current sample's heatmap feature vector (as a NumPy array).
-            current_vec = heatmap_features_batch[i].cpu().numpy()
-            # Get the corresponding gradient vector (as numpy array).
-            grad_value = grad_output_batch[i].cpu().numpy()  # shape: [f_dim]
-            # Initialize a bias vector for diseases (shape: [num_diseases]).
-            bias_vec = np.zeros(num_diseases, dtype=np.float32)
-            # Loop over each edge in the graph of type 'finding'.
-            for edge in graph["links"]:
-                if edge["relation"] == "finding":
-                    disease_idx = int(edge["source"])  # disease node index
-                    sign_idx = int(edge["target"])  # sign node index
-                    weight = edge.get("weight", 1.0)
-                    self.__compute_bias_dinamically(bias_vec, current_vec, disease_idx,
-                                                   graph, keys_order, sign_idx,
-                                                   weight, grad_value)
-            # Convert bias vector to tensor and append.
-            update_list.append(torch.tensor(bias_vec, dtype=torch.float32, device=heatmap_features_batch.device))
-
-        # Stack updates to form a tensor of shape [B, num_diseases].
-        update_tensor = torch.stack(update_list, dim=0)
-        return update_tensor
-
-    def __compute_bias_dinamically(self, bias_vec, current_vec, disease_idx,
-                                   graph, keys_order, sign_idx, weight, grad_value=None):
-        """
-        Compute the bias for a specific disease node based on the cosine similarity.
-        The bias_vec is updated in place.
-        Args:
-            bias_vec (np.ndarray): The bias vector to be updated.
-            current_vec (np.ndarray): The current heatmap feature vector.
-            disease_idx (int): The index of the disease node.
-            graph (dict): The entire graph with keys "nodes" and "edges".
-            keys_order (list): List of keys specifying the order in which features should appear.
-            sign_idx (int): The index of the sign node.
-            weight (float): The weight of the edge between the disease and sign node.
-        """
-        # Find the corresponding sign node.
+        # Build sign node id → stored feature vector (torch.Tensor)
+        sign_features = {}
         for node in graph["nodes"]:
-            if node.get("type") == "sign" and int(node["id"]) == sign_idx:
-                stored_features = node.get("features", None)
-                if stored_features is None:
-                    return  # No features available for this sign node.
+            if node.get("type") == "sign" and "features" in node:
+                feature_vec = torch.tensor(
+                    [_compute_feature_vector(node["features"], keys=keys_order)],
+                    dtype=torch.float32,
+                    device=device
+                ).squeeze(0)  # [f_dim]
+                sign_features[int(node["id"])] = feature_vec
 
-                # Convert stored features dict to vector.
-                stored_vec = _compute_feature_vector(stored_features, keys=keys_order)  # numpy array
-                # Compute cosine similarity.
-                sim = xai_fe.__cosine_similarity(stored_vec, current_vec)
-                # Normalize similarity to [0,1].
+        # Process each sample
+        for i in range(batch):
+            f_vec = heatmap_features_batch[i]  # [f_dim]
+            grad = grad_output_batch[i]
+            grad_factor = torch.norm(grad)
+
+            for edge in graph["links"]:
+                if edge["relation"] != "finding":
+                    continue
+                d = int(edge["source"])
+                s = int(edge["target"])
+                weight = edge.get("weight", 1.0)
+
+                if s not in sign_features:
+                    continue
+
+                stored_vec = sign_features[s]  # [f_dim]
+
+                # Cosine similarity (normalized to [0,1])
+                sim = torch.nn.functional.cosine_similarity(f_vec, stored_vec, dim=0)
                 sim = (sim + 1.0) / 2.0
 
-                # Incorporate gradient information.
-                # Use the gradient info from the classifier head backpropagation.
-                grad_factor = np.linalg.norm(grad_value)
+                nudges[i, d] += self.eta * weight * sim * grad_factor
 
-                # Accumulate contribution for this disease.
-                bias_vec[disease_idx] += self.eta * weight * sim * grad_factor
-            break  # sign node found, break inner loop
+        return nudges
 
 
 # ========================= SWIN MIMIC + GRAPH CLASSIFIER =========================
@@ -696,13 +672,27 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
     def forward(self, x, use_graph_guidance=True):
         """
-        Forward pass through the model.
-        Note:
-            If graph guidance is active, it assumes the graph bias is already injected into the transformer layers.
-            use_graph_guidance: If True, forward function adds graph nudge from graph nodes.
+        Perform a forward pass through the model with optional graph-guided nudging.
+
         Args:
-            x (torch.Tensor): Input tensor.
-            use_graph_guidance (bool): Whether to use graph guidance.
+            x (torch.Tensor): Input image tensor of shape [B, C, H, W].
+            use_graph_guidance (bool): Whether to apply graph-guided nudging.
+
+        Returns:
+            torch.Tensor: Final logits tensor of shape [B, num_classes].
+
+        Workflow:
+            1. Inject graph bias into attention layers once if enabled.
+            2. Extract base logits from the backbone and classifier head.
+            3. During training:
+                - Extract attention-based heatmap features.
+                - Update graph sign nodes with extracted features and similarity scores.
+            4. If graph guidance is disabled, return raw classifier logits.
+            5. If nudging is active:
+                - Compute a bias vector based on the similarity between extracted features and sign node features.
+                - Add the bias vector to the classifier logits.
+            6. Return the adjusted or base logits.
+
         Note:
             - self.is_using_nudger (bool): If True, nudges the classifier head using the GraphNudger module
             (uses the attention map and stats feature in sign nodes).
@@ -727,44 +717,43 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         if self.training:
             self.classifier_logits.register_hook(self._save_classifier_grad)
 
-        # 4. Generate attention map and extract features.
+        # 4. Extract attention maps and features
         att_maps_batch = self.attention_map_generator.generate_attention_map(self.swin_model, x)
-        features_dict_batch = xai_fe.extract_heatmap_features(att_maps_batch, threshold=ATTENTION_MAP_THRESHOLD)
+        features_dict_batch = xai_fe.extract_attention_batch_multiregion_torch(att_maps_batch, self.device,
+                                                                         threshold=ATTENTION_MAP_THRESHOLD)
 
-        # 4b. If training mode, update the graph with the new features statistics
-        if self.training:
-            # Update the graph with the new feature statistics.
-            xai_fe.update_graph_features(self.graph, features_dict_batch, self.stats_keys, apply_similarity=True)
+        # 4b. Update graph from extracted features
+        # Update the graph with the new feature statistics.
+        xai_fe.find_match_and_update_graph_features(
+            self.graph,
+            extracted_features=features_dict_batch,
+            device=self.device,
+            update_features=self.training,
+            is_inference=self.is_inference
+        )
 
         # 1a. If graph guidance is not active return the classifier logits directly.
         if not use_graph_guidance:
             return self.classifier_logits
 
-        # 5. Convert the features dictionary to a feature vector.
-        # _compute_feature_vector returns a numpy array; convert to tensor.
-        f_vec_b = self.__compute_feature_vector(features_dict_batch)  # shape: [B, f_dim]
-        batch_size = base_logits.shape[0]
+        # 5a. Build heatmap_features_batch for nudger
+        heatmap_features_batch = torch.stack([
+            features_dict_batch["intensity"],
+            features_dict_batch["variance"],
+            features_dict_batch["entropy"],
+            features_dict_batch["active_dim"],
+            features_dict_batch["skewness"],
+            features_dict_batch["kurtosis"],
+            features_dict_batch["fractal"],
+        ], dim=1)  # shape [B, 7]
 
-        # If f_vec_b is 1D, we need to stack it to match the batch size.
-        if f_vec_b.ndim == 1:
-            heatmap_features_batch = torch.stack([
-                torch.tensor(f_vec_b, dtype=torch.float32, device=base_logits.device)
-                for _ in range(batch_size)
-            ])  # shape: [B, f_dim]
-
-        else:
-            # If f_vec_b is already 2D, we can use it directly.
-            heatmap_features_batch = f_vec_b
-
-        # 6. Compute the graph bias using the Nudger module.
+        # 5b. Compute the graph bias using the Nudger module.
         # Use the attention map features and stats features.
         if self.is_using_nudger:
-
-            if self.classifier_grad is None:
-                # If no gradient has been captured, default to ones.
-                grad_output_batch = torch.ones_like(heatmap_features_batch)
-            else:
-                grad_output_batch = self.classifier_grad  # [B, f_dim] ideally.
+            grad_output_batch = (
+                self.classifier_grad if self.classifier_grad is not None
+                else torch.ones_like(heatmap_features_batch)
+            )
 
             update_vector = self.graph_nudger(
                 heatmap_features_batch=heatmap_features_batch,
@@ -874,7 +863,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 optimizer.zero_grad()
                 images = images.to(self.device)
                 labels = labels.to(self.device)
-                study_ids = study_ids.to(self.device)
+                #study_ids = study_ids.to(self.device)
 
                 # Reset the classifier gradient to None before each batch.
                 self.classifier_grad = None
