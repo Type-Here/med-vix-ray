@@ -733,13 +733,14 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                                                                          threshold=ATTENTION_MAP_THRESHOLD)
 
         # 4b. Update graph from extracted features
-        if self.training:
-            # Update the graph with the new feature statistics.
-            xai_fe.update_graph_features(
-                self.graph,
-                extracted_features=features_dict_batch,
-                apply_similarity=True
-            )
+        # Update the graph with the new feature statistics.
+        xai_fe.find_match_and_update_graph_features(
+            self.graph,
+            extracted_features=features_dict_batch,
+            device=self.device,
+            update_features=self.training,
+            is_inference=self.is_inference
+        )
 
         # 1a. If graph guidance is not active return the classifier logits directly.
         if not use_graph_guidance:
