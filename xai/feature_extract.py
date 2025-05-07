@@ -1,507 +1,367 @@
-import numpy as np
+from typing import Union
+
 import torch
-import cv2
-from scipy.stats import skew, kurtosis
-from settings import SIMILARITY_THRESHOLD
 
+import torch.nn.functional as fc
+from torch import Tensor
 
-def extract_heatmap_features_multiregion(att_maps, threshold=SIMILARITY_THRESHOLD):
+# ---- HELPER FUNCTIONS FOR FEATURE EXTRACTION ---- #
+
+def _binarize_maps(heatmap: torch.Tensor, threshold: float) -> torch.Tensor:
     """
-    Process a batch of attention maps and extract features for each image using extract_sign_features
-    with multi-region recognition.
-    This should handle both single and batch inputs.
+    Binarize the heatmap given a threshold.
+    Args:
+        heatmap: Tensor [H, W], values in [0,1]
+        threshold: float threshold
+    Returns:
+        binary: FloatTensor [H, W] with 0/1 values
+    """
+    return (heatmap > threshold).float()
+
+def _label_connected_components(binary: torch.Tensor, max_labels: int = 50) -> torch.Tensor:
+    """
+    Label connected components in a binary map via iterative dilation (8-neighborhood).
+    Args:
+        binary: FloatTensor [H, W] of 0/1
+        max_labels: safety cap on number of labels
+    Returns:
+        label_map: IntTensor [H, W] with region labels 1..n
+    """
+    # Ensure binary is a float tensor
+    label_map = torch.zeros_like(binary, dtype=torch.int32)
+    remaining = binary.clone()
+    label_id = 1
+
+    # Define a 3x3 kernel for dilation
+    kernel = torch.ones((1, 1, 3, 3), device=binary.device)
+
+    while remaining.sum() > 0 and label_id <= max_labels:
+        seed = (remaining > 0).float()
+        prev_seed = torch.zeros_like(seed)
+        # Expand region until convergence
+        while not torch.equal(seed, prev_seed):
+            prev_seed = seed
+            dilated = fc.conv2d(seed.unsqueeze(0).unsqueeze(0), kernel, padding=1)[0, 0]
+            seed = (dilated > 0).float() * remaining
+        label_map[seed.bool()] = label_id
+        remaining = remaining * (1 - seed)
+        label_id += 1
+
+    return label_map
+
+# --- REGION STATS COMPUTATION --- #
+
+def _compute_region_stats(heatmap: torch.Tensor, region_mask: torch.Tensor,
+                          eps: float = 1e-6) -> tuple[Tensor, Union[int, float, bool]]:
+    """
+    Compute statistics for a single region mask.
+    Args:
+        heatmap: Tensor [H, W], normalized
+        region_mask: FloatTensor [H, W] of 0/1 selecting region
+        eps: small value to avoid division by zero
+    Returns:
+        stats: Tensor [F] with features
+        area: int, number of pixels in the region
+    """
+    heads, wei = heatmap.shape
+
+    # Apply mask to heatmap
+    vals = heatmap[region_mask.bool()]
+    # Compute area of the region
+    area = region_mask.sum().item()
+
+    # Basic stats
+    mean_val = vals.mean()
+    var_val = vals.var(unbiased=False)
+    std_val = torch.sqrt(var_val + eps)
+
+    # Entropy via histogram approximation
+    hist_bins = 32
+    hist = torch.histc(vals, bins=hist_bins, min=0.0, max=1.0) + eps
+    prob = hist / hist.sum()
+    entropy = -torch.sum(prob * torch.log(prob))
+
+    # Skewness and kurtosis (moment-based)
+    centered = vals - mean_val
+    skewness = ((centered ** 3).mean()) / (std_val ** 3 + eps)
+    kurtosis = ((centered ** 4).mean()) / (std_val ** 4 + eps)
+
+    # Active area fraction
+    active_dim = area / (heads * wei)
+
+    # Fractal fallback
+    fractal = active_dim * (1 + kurtosis)
+
+    # Bounding box normalized
+    coords = region_mask.nonzero(as_tuple=False).float()
+    y_min, x_min = coords.min(dim=0)[0] / heads
+    y_max, x_max = coords.max(dim=0)[0] / wei
+    position = [x_min.item(), x_max.item(), y_min.item(), y_max.item()]
+
+
+    # Create a single concatenated tensor with all features in order
+    # returns Tensor[F] where F = 7 scalari + 4 position = 11
+    return torch.cat([
+          mean_val.unsqueeze(0),
+          var_val.unsqueeze(0),
+          entropy.unsqueeze(0),
+          skewness.unsqueeze(0),
+          kurtosis.unsqueeze(0),
+          torch.tensor(active_dim, dtype=torch.float32, device=heatmap.device).unsqueeze(0),
+          fractal.unsqueeze(0),
+          torch.tensor(position, dtype=torch.float32, device=heatmap.device)
+      ]), area  # Return both stats and area
+
+# ================== EXTRACTION FEATURES FUNCTIONS ================= #
+
+# Optimized feature extraction for multiregion attention maps
+def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: torch.device,
+                                              threshold: float = 0.5, min_area_frac: float = 0.001,
+                                              max_regions_per_image: int = 5) -> list[list[Tensor]]:
+    """
+    Optimized multiregion feature extraction with optional sign matching capability.
 
     Args:
-        att_maps (np.array or torch.Tensor): Batch of attention maps with shape [B, H, W].
-        threshold (float): Threshold for binarization.
+        attn_maps (torch.Tensor): [B, 1, H, W] or [B, H, W]
+        device (torch.device): computation device
+        threshold (float): binarization threshold (or 'adaptive' for Otsu-like)
+        min_area_frac (float): minimum region area fraction
+        max_regions_per_image (int): max number of regions to extract per image
 
     Returns:
-        dict: A dictionary where each key maps to a tensor of shape [B] (or [B, 4] for 'position').
-        It's a combination of dictionaries for each image in batch.
-
-    Note:
-        dict features: Dictionary of extracted features, including:
-              - intensity: Mean intensity.
-              - variance: Variance of intensities.
-              - entropy: Shannon entropy of the normalized histogram.
-              - active_dim: Fraction of the heatmap activated above the threshold.
-              - skewness: Skewness of the intensity distribution.
-              - kurtosis: Kurtosis of the intensity distribution.
-              - fractal: Fractal dimension computed with a box-counting method.
-              - position: [x_min, x_max, y_min, y_max] bounding box of the activated area.
+        list[dict]: list of dictionaries with region features
     """
-    # If att_maps is a torch.Tensor, convert to numpy array for processing.
-    if isinstance(att_maps, torch.Tensor):
-        att_maps = att_maps.cpu().numpy()
-    B = att_maps.shape[0]
-    feature_dicts = []
-    for i in range(B):
-        feature_dicts.append(__extract_heatmap_features_single_map_multiregion(att_maps[i], threshold))
 
-    # Combine the per-sample dictionaries into batched tensors.
-    combined_features = {}
-    for key in feature_dicts[0]:
-        # For keys where the value is a scalar, stack into a tensor of shape [B].
-        # For 'position', values are lists of 4 numbers, so stack into shape [B, 4].
-        combined_features[key] = torch.tensor([d[key] for d in feature_dicts], dtype=torch.float32)
-    return combined_features
+    # Ensure correct shape and normalize batch at once
+    if attn_maps.dim() == 4 and attn_maps.shape[1] == 1:
+        attn_maps = attn_maps.squeeze(1)
+    elif attn_maps.dim() != 3:
+        raise ValueError(f"Expected [B,1,H,W] or [B,H,W], got {attn_maps.shape}")
 
+    batch, head, wei = attn_maps.shape
+    # features = {k: [] for k in ["intensity", "variance", "entropy", "skewness",
+    #                            "kurtosis", "active_dim", "fractal", "position"]}
 
-def extract_heatmap_features(att_map, threshold=SIMILARITY_THRESHOLD):
-    """
-        Extract numerical features from an attention heatmap (e.g., from CDAM or a modified Grad-CAM).
-        This is the main function to call for feature extraction.
-        It handles both single and batch inputs.
+    # Batch normalize at once
+    batch_min = attn_maps.view(batch, -1).min(dim=1)[0].view(batch, 1, 1)
+    batch_max = attn_maps.view(batch, -1).max(dim=1)[0].view(batch, 1, 1)
+    normalized_maps = (attn_maps - batch_min) / (batch_max - batch_min + 1e-6)
 
-        Args:
-            att_map (np.array): Attention map or heatmap (e.g., 256x256).
-            threshold (float): Threshold for binarizing the heatmap.
+    # Use adaptive threshold if requested (Otsu-like: variance maximization)
+    if threshold == 'adaptive':
+        thresholds = []
+        for i in range(batch):
+            hist = torch.histc(normalized_maps[i], bins=256, min=0, max=1)
+            cum_hist = torch.cumsum(hist, dim=0)
+            total = cum_hist[-1]
 
-        Returns:
-            dict: If input is a single map, returns a dictionary of extracted features.
-            If input is a batch, returns a dictionary of extracted features in multiple shapes.
+            sum_total = torch.sum(torch.arange(256, device=device) * hist) / 256
+            w_bg = cum_hist / total
+            w_fg = 1 - w_bg
 
-        Note:
-            dict features: Dictionary of extracted features, including:
-                  - intensity: Mean intensity.
-                  - variance: Variance of intensities.
-                  - entropy: Shannon entropy of the normalized histogram.
-                  - active_dim: Fraction of the heatmap activated above the threshold.
-                  - skewness: Skewness of the intensity distribution.
-                  - kurtosis: Kurtosis of the intensity distribution.
-                  - fractal: Fractal dimension computed with a box-counting method.
-                  - position: [x_min, x_max, y_min, y_max] bounding box of the activated area.
-        """
-    # If input is a batch:
-    if att_map.ndim == 3:
-        b_size = att_map.shape[0]
-        feature_dicts = []
-        for i in range(b_size):
-            feature_dicts.append(extract_heatmap_features(att_map[i], threshold))
-        # Combine the dictionaries: for each key, stack values into a tensor.
-        combined_features = {}
-        for key in feature_dicts[0]:
-            combined_features[key] = torch.tensor([d[key] for d in feature_dicts], dtype=torch.float32)
-        return combined_features
+            # Avoid division by zero
+            w_bg = torch.where(w_bg < 1e-6, torch.ones_like(w_bg), w_bg)
+            w_fg = torch.where(w_fg < 1e-6, torch.ones_like(w_fg), w_fg)
+
+            mean_bg = torch.cumsum(torch.arange(256, device=device) * hist, dim=0) / (256 * cum_hist + 1e-6)
+            mean_fg = (sum_total - torch.cumsum(torch.arange(256, device=device) * hist, dim=0)) / (
+                        256 * (total - cum_hist) + 1e-6)
+
+            variance = w_bg * w_fg * (mean_bg - mean_fg) ** 2
+            thresh_idx = torch.argmax(variance)
+            thresholds.append((thresh_idx / 255).item())
     else:
-        # If input is a single map, extract features.
-        return __extract_heatmap_features_single_map(att_map, threshold)
-
-
-def __fractal_dimension(z, f_threshold=0.9):
-    """
-    Calculate fractal dimension using box-counting method.
-
-    The fractal dimension quantifies the complexity of the pattern in the binary map.
-    Values typically range from 1.0 (smooth shapes) to 2.0 (highly irregular patterns).
-    It's a measure of how detail in the pattern changes with the scale at which it is measured.
-
-    If the input is a binary map (0s and 1s), the function will use values > 0.5 as the pattern.
-
-    Args:
-        z (np.array): Binary map or heatmap.
-        f_threshold (float): Threshold for converting to binary. Values less than
-                             this threshold will be counted as part of the pattern.
-
-    Returns:
-        float: The estimated fractal dimension of the pattern.
-    """
-    # 1. Convert input to boolean mask based on threshold
-
-    # If input is already binary (0s and 1s), use values > 0.5 as the pattern
-    # Otherwise use the provided threshold
-    z = np.asarray(z)
-    if np.array_equal(np.unique(z), np.array([0, 1])):
-       mask = z > 0.5                 # Already binary
-    else:
-       mask = z <= f_threshold
-
-    # 2) Box size: 2,4,8,…,128
-    sizes = 2 ** np.arange(1, 8)
-
-    # 3) Count number of boxes with pattern
-    ns, valid_sizes = [], []
-    # ns is the number of boxes with pattern
-    # valid_sizes is the size of the boxes
-    for s in sizes:
-       reduced = cv2.resize(mask.astype(np.uint8),
-                            (s, s), cv2.INTER_NEAREST)
-       n = np.count_nonzero(reduced)  # boxes with pattern
-       if n:                          # reduce only if non-zero
-           ns.append(n)
-           valid_sizes.append(s)
-
-    # Fail-safe: if no valid sizes, return 1.0
-    if len(valid_sizes) < 2:
-        return 1.0
-
-        # 4) log-log regression (Linear fit)
-    coeffs = np.polyfit(np.log(valid_sizes), np.log(ns), 1)
-    return coeffs[0]
-
-
-def __extract_heatmap_features_single_map_multiregion(att_map, threshold=SIMILARITY_THRESHOLD):
-        """
-        Extract features from an attention map that may contain multiple distinct sign regions.
-
-        Instead of computing global statistics, this function:
-          - Normalizes the attention map.
-          - Thresholds the map to produce a binary image.
-          - Uses connected component analysis to identify candidate regions.
-          - For each candidate region, computes statistical features (mean, variance, entropy,
-            active area, skewness, kurtosis, fractal dimension, and bounding box).
-          - Selects a representative region (here, the region with the largest area).
-
-        If no region is found, it falls back to global extraction.
-
-        Args:
-            att_map (np.array): A 2D attention map (shape: [H, W]). Can be unnormalized.
-            threshold (float): Threshold for binarization.
-
-        Returns:
-            dict: A dictionary containing the extracted features from the selected region.
-                  Keys include: "intensity", "variance", "entropy", "active_dim",
-                  "skewness", "kurtosis", "fractal", "position" (bounding box as [x_min, x_max, y_min, y_max]).
-        """
-        # Ensure the attention map is float32.
-        att_map = att_map.astype(np.float32)
-        # Normalize the map to [0,1] if needed.
-        max_val = np.max(att_map)
-        heatmap = att_map / max_val if max_val > 1.0 else att_map
-
-        # Binarize the heatmap.
-        binary_map = (heatmap > threshold).astype(np.uint8)
-
-        # Use connected component analysis to detect distinct regions.
-        # This will label each connected component with a unique integer.
-        # The background will be labeled as 0.
-        #
-        # Here is the main difference with the single map extraction:
-        num_labels, labels_im, stats, centroids = (
-            cv2.connectedComponentsWithStats(binary_map, connectivity=8))
-
-        # Initialize a list to hold region features.
-        region_features = []
-        for label in range(1, num_labels):  # label 0 is background.
-            # Create a mask for the region.
-            region_mask = (labels_im == label).astype(np.uint8)
-            region_area = stats[label, cv2.CC_STAT_AREA]
-
-            # Compute region-specific statistics.
-            region_pixels = heatmap[labels_im == label]
-            region_intensity = np.mean(region_pixels)
-            region_variance = np.var(region_pixels)
-
-            # Entropy
-            hist, _ = np.histogram(region_pixels, bins=256, range=(0, 1))
-            hist = hist + 1e-6  # avoid log(0)
-            prob = hist / np.sum(hist)
-            region_entropy = -np.sum(prob * np.log(prob))
-
-            # Activated area fraction relative to full image.
-            region_active_dim = region_area / heatmap.size
-
-            # Skewness and kurtosis.
-            region_skewness = skew(region_pixels.flatten())
-            region_kurtosis = kurtosis(region_pixels.flatten())
-
-            # Fractal dimension using box-counting.
-            region_fractal = __fractal_dimension(region_mask)
-
-            # Bounding box using stats: [x, y, width, height]
-            x, y, w, h = (stats[label, cv2.CC_STAT_LEFT], stats[label, cv2.CC_STAT_TOP],
-                          stats[label, cv2.CC_STAT_WIDTH],
-                          stats[label, cv2.CC_STAT_HEIGHT]
-                          )
-            # Normalize the bounding box coordinates from 0 to 1
-            x_min, x_max = x / heatmap.shape[1], (x + w) / heatmap.shape[1]
-            y_min, y_max = y / heatmap.shape[0], (y + h) / heatmap.shape[0]
-
-            region_position = [x_min, x_max, y_min, y_max]
-
-            region_features.append({
-                "intensity": region_intensity,
-                "variance": region_variance,
-                "entropy": region_entropy,
-                "active_dim": region_active_dim,
-                "skewness": region_skewness,
-                "kurtosis": region_kurtosis,
-                "fractal": region_fractal,
-                "position": region_position,
-                "area": region_area
-            })
-
-        # If no region is found, fall back to global extraction.
-        if len(region_features) == 0:
-            return __extract_heatmap_features_single_map(att_map, threshold)
-
-        # Select the region with the largest area as representative.
-        selected_region = max(region_features, key=lambda r: r["area"])
-        # Optionally remove the 'area' key if not needed.
-        selected_region.pop("area", None)
-        return selected_region
-
-
-def __extract_heatmap_features_single_map(att_map, threshold=SIMILARITY_THRESHOLD):
-    """
-    Extract numerical features from an attention heatmap (e.g., from CDAM or a modified Grad-CAM).
-
-    Args:
-        att_map (np.array): Attention map or heatmap (e.g., 256x256).
-        threshold (float): Threshold for binarizing the heatmap.
-
-    Returns:
-        dict: Dictionary of extracted features, including:
-              - intensity: Mean intensity.
-              - variance: Variance of intensities.
-              - entropy: Shannon entropy of the normalized histogram.
-              - active_dim: Fraction of the heatmap activated above the threshold.
-              - skewness: Skewness of the intensity distribution.
-              - kurtosis: Kurtosis of the intensity distribution.
-              - fractal: Fractal dimension computed with a box-counting method.
-              - position: [x_min, x_max, y_min, y_max] bounding box of the activated area.
-    """
-    # Ensure the attention map is a float32 array.
-    att_map = att_map.cpu().numpy().astype(np.float32)
-    # or keep pyTorch
-    # att_map = att_map.float()
-
-    # If the map's max value is above 1, normalize to [0,1].
-    max_val = np.max(att_map)
-    if max_val > 1.0:
-        heatmap = att_map / max_val
-    else:
-        heatmap = att_map
-
-    # Compute mean intensity and variance
-    mean_intensity = np.mean(heatmap)
-    variance_intensity = np.var(heatmap)
-
-    # Calculate entropy using histogram of pixel intensities
-    hist, _ = np.histogram(heatmap, bins=256, range=(0, 1))
-    hist = hist + 1e-6  # add epsilon to avoid log(0)
-    prob = hist / np.sum(hist)
-    entropy_value = -np.sum(prob * np.log(prob))
-    # entropy_value = entropy(hist)
-
-    # Binarize the heatmap to identify activated regions
-    binary_map = (heatmap > threshold).astype(np.uint8)
-    activated_area = np.sum(binary_map) / heatmap.size  # Fraction of activated area
-
-    # Determine the bounding box (position) of the activated region
-    activated_indices = np.where(binary_map > 0)
-    if activated_indices[0].size > 0:
-        # Note: np.where returns (rows, cols) => (y, x)
-        y_min, y_max = int(np.min(activated_indices[0])), int(np.max(activated_indices[0]))
-        x_min, x_max = int(np.min(activated_indices[1])), int(np.max(activated_indices[1]))
-        # Normalize the values from 0 to 1
-        y_min, y_max = y_min / heatmap.shape[0], y_max / heatmap.shape[0]
-        x_min, x_max = x_min / heatmap.shape[1], x_max / heatmap.shape[1]
-    else:
-        # If no activation is found, default to zeros
-        x_min, x_max, y_min, y_max = 0, 0, 0, 0
-
-    # Calculate skewness and kurtosis on the flattened heatmap
-    skewness_value = skew(heatmap.flatten())
-    kurtosis_value = kurtosis(heatmap.flatten())
-
-    # Fractal dimension calculation using the box-counting method.
-    # Here, we use a binary map with a threshold trick.
-    fractal_value = __fractal_dimension(binary_map)
-
-    return {
-        "intensity": mean_intensity,
-        "variance": variance_intensity,
-        "entropy": entropy_value,
-        "active_dim": activated_area,
-        "skewness": skewness_value,
-        "kurtosis": kurtosis_value,
-        "fractal": fractal_value,
-        "position": [x_min, x_max, y_min, y_max]
-    }
-
-
-def _compute_feature_vector(features, keys=None):
-    """
-    Convert a dictionary of features into a vector.
-    If keys is None, use a default list.
-    Args:
-        features (dict): Dictionary of features.
-        keys (list): List of keys to extract from the dictionary.
-    Returns:
-        np.array: Features vectorized as a numpy array.
-    """
-    if keys is None:
-        keys = ["intensity", "variance", "skewness", "kurtosis", "active_dim", "entropy", "fractal"]
-    return np.array([features.get(k, 0.0) for k in keys], dtype=np.float32)
-
-
-def __cosine_similarity(vec1, vec2):
-    """
-    Compute cosine similarity between two numpy vectors.
-    Returns a scalar between -1 and 1.
-    Args:
-        vec1 (np.array): First vector.
-        vec2 (np.array): Second vector.
-    Returns:
-        float: Cosine similarity between the two vectors.
-    """
-    norm1 = np.linalg.norm(vec1)
-    norm2 = np.linalg.norm(vec2)
-    if norm1 == 0 or norm2 == 0:
-        return 0.0
-    return np.dot(vec1, vec2) / (norm1 * norm2)
-
-
-def compute_sign_bias(graph_json, num_diseases):
-    """
-    Compute an extra bias vector for disease nodes based on the connected sign nodes.
-    Returns a numpy array of shape (num_diseases,).
-    Note:
-        - num_diseases is equal to the number of labels of the model.
-
-    Note:
-        - Assumes that the graph_json contains edges of type 'finding' and nodes of type 'sign'.
-        - It also assumes that findings relations have source as disease and target as sign.
-
-    Args:
-        graph_json (dict): JSON graph data.
-        num_diseases (int): Number of disease nodes.
-
-    Returns:
-        np.array: Bias vector for disease nodes.
-    """
-    # Initialize bias vector for diseases.
-    bias = np.zeros(num_diseases, dtype=np.float32)
-
-    # Iterate over edges of type 'finding'.
-    for edge in graph_json["links"]:
-        if edge["relation"] == "finding":
-            disease_idx = int(edge["source"])  # disease index
-            sign_idx = int(edge["target"])  # sign index
-            weight = edge.get("weight", 1.0)
-            # Find the corresponding sign node in graph_json["nodes"].
-            # We assume that sign nodes have an attribute "type"=="sign"
-            for node in graph_json["nodes"]:
-                if node.get("relation") == "sign" and int(node["id"]) == sign_idx:
-                    similarity = node.get("similarity", 1.0)
-                    # Accumulate the contribution.
-                    bias[disease_idx] += weight * similarity
-                    break  # found the sign node, move to next edge
-    return bias  # shape (num_diseases,)
-
-
-def __update_weighted_mean(prev_mean, new_value, count):
-    """
-    Update a running mean using a weighted moving average.
-
-    Args:
-        prev_mean (float): Previous mean value.
-        new_value (float): New observation.
-        count (int): Number of observations before the new one.
-
-    Returns:
-        float: Updated mean value.
-    """
-    return (count * prev_mean + new_value) / (count + 1)
-
-
-def _similarity_evaluation_single_node(node, extracted_features):
-    """
-        Compute the similarity between the stored features of a node and the extracted features.
-
-        Args:
-            node (dict): Node from the JSON graph with features.
-            extracted_features (dict): Features extracted from the attention heatmap.
-    """
-    stored_vec = _compute_feature_vector(node["features"])
-    extracted_vec = _compute_feature_vector(extracted_features)
-    sim = __cosine_similarity(stored_vec, extracted_vec)
-    sim = (sim + 1.0) / 2.0  # normalize to [0,1]
-    # You can decide whether to update node["similarity"] or leave it as is.
-    node["similarity"] = sim
-
-
-def _similarity_evaluation(graph_json, extracted_features):
-    """
-    Compute the similarity between the stored features of each node and the extracted features.
-
-    Args:
-        graph_json (dict): JSON graph data.
-        extracted_features (dict): Features extracted from the attention heatmap.
-
-    Returns:
-        dict: Updated graph JSON with similarity scores for each node.
-    """
-    for node in graph_json["nodes"]:
-        if node.get("type") == "sign":
-            _similarity_evaluation_single_node(node, extracted_features)
-    return graph_json
-
-
-def update_graph_features(graph, extracted_features, sign_label, apply_similarity=False):
-    """
-    Update the clinical finding node in the JSON graph with newly extracted features.
-    It supports both single-sample and batched inputs.
-
-    For each node with label == sign_label, update each feature using a weighted moving average.
-    Special handling is done for the "position" feature (a list of 4 values).
-
-    Args:
-        graph (dict): JSON graph data.
-        extracted_features (dict or dict of torch.Tensor):
-            - If single-sample, a dictionary of features (e.g., {"intensity": float, "position": [x_min,x_max,y_min,y_max], ...}).
-            - If batched, a dictionary where each key maps to a torch.Tensor of shape [B] (or [B, 4] for position).
-        sign_label (str): Radiological sign (clinical finding) label to update.
-        apply_similarity (bool): If True, compute similarity between the node and the extracted features.
-
-    Returns:
-        dict: Updated graph_json.
-    """
-    # Detect batch or single-sample
-    is_batch = any(isinstance(v, torch.Tensor) and v.ndim >= 1 for v in extracted_features.values())
-
-    if is_batch:
-        batch_size = next(iter(extracted_features.values())).shape[0]
-        for i in range(batch_size):
-            single = {
-                k: v[i].item() if v.ndim == 1 else v[i].tolist()
-                for k, v in extracted_features.items()
-            }
-            graph = update_graph_features(graph, single, sign_label, apply_similarity)
-        return graph
-
-    # Now processing a single sample
-    for node in graph["nodes"]:
-        if node.get("label") != sign_label:
-            continue
-
-        # Initialize observation count and feature dict
-        node.setdefault("count", 0)
-        #node.setdefault("features", {})
-
-        for key, value in extracted_features.items():
-            if value is None:
+        thresholds = [threshold] * batch
+
+    return_features = []
+
+    # Process each image
+    for i in range(batch):
+        heatmap = normalized_maps[i] # Normalized heatmap [H, W]
+        binary = _binarize_maps(heatmap, thresholds[i]) # Binary map [H, W]
+        labeled = _label_connected_components(binary, max_labels=10)  # Limit max regions
+
+        # Extract stats for top regions by size
+        regions = []
+        for lbl in range(1, labeled.max().item() + 1):
+            # Create a mask for the current region
+            mask = (labeled == lbl).float()
+            area = mask.sum().item()
+            if area < min_area_frac * head * wei:
                 continue
 
-            # Init feature if not present
-            if key not in node["features"] or node["count"] == 0:
-                node["features"][key] = value
-            elif key == "position":
-                # Update each of the 4 coordinates
-                node["features"][key] = [
-                    __update_weighted_mean(node["features"][key][i], value[i], node["count"])
-                    for i in range(4)
-                ]
-            else:
-                node["features"][key] = __update_weighted_mean(
-                    node["features"][key], value, node["count"]
-                )
+            # Here stats are computed for each region
+            region_stats, area = _compute_region_stats(heatmap, mask)
+            regions.append((area,region_stats))
 
-        # Optional similarity evaluation
-        if apply_similarity:
-            _similarity_evaluation_single_node(node, extracted_features)
+        # Sort by area (descending) and take top K
+        if len(regions) > max_regions_per_image:
+            regions.sort(key=lambda x: x[0], reverse=True)
+            regions = regions[:max_regions_per_image] # Keep only top K regions
 
-        node["count"] += 1  # Only if actually updated
+        elif not regions:
+            # Fallback to global stats
+            # If no regions found, compute global stats
+            mask = torch.ones_like(heatmap, dtype=torch.float32)
+            stats, area = _compute_region_stats(heatmap, mask)
+            # Wrap in a list to match the expected output format
+            regions.append((area,stats))
 
+        return_features.append([x for _, x in regions])  # Extract only the stats
+
+    return return_features # list of B elements, each with a list of region features
+
+
+# ============================= OTHER FUNCTIONS ============================= #
+
+def _similarity_evaluation_single_node(node: dict, extracted_features_one_region: Tensor):
+    """
+    Compute cosine similarity between stored node features and current extracted ones.
+
+    Args:
+        node (dict): Graph node with 'features'.
+        extracted_features_one_region (Tensor): Dict with keys matching stats_keys.
+
+    Returns:
+        float: Cosine similarity between stored and extracted features.
+    """
+    keys = ["intensity", "variance", "entropy", "active_dim", "skewness", "kurtosis", "fractal", "position"]  # exclude 'position'
+    stored_vec = torch.tensor([node["features"].get(k, 0.0) for k in keys], dtype=torch.float32)
+
+    return __cosine_similarity_torch(stored_vec, extracted_features_one_region)
+
+
+def __cosine_similarity_torch(vec1: torch.Tensor, vec2: torch.Tensor) -> float:
+    """
+    Cosine similarity between two 1D torch tensors, normalized to [0,1].
+    """
+    sim = torch.nn.functional.cosine_similarity(vec1, vec2, dim=0).item()
+    return (sim + 1.0) / 2.0
+
+
+# ---- UPDATE GRAPH USING MULTI-REGIO, MULTISIGNS EXTRACT FUNCTION ---- #
+
+def find_match_and_update_graph_features(graph, extracted_features, device, stats_keys=None,
+                                         update_features=True, is_inference=False):
+    """
+    Updates the graph nodes (type="sign") with feature statistics from matched regions.
+
+    Args:
+        graph (dict): Graph JSON containing "nodes" (and optionally "links").
+        extracted_features (list[list[Tensor]]): List of lists of feature dictionaries.
+        device (torch.device): Device for tensor operations.
+        First list is over batch, second is over regions for each image.
+        The tensor contains all stats features in tensors.
+        stats_keys (list of str, optional): Keys to update. Defaults to a standard set.
+        update_features (bool): If True, update the graph features of the most similar node.
+        is_inference (bool): If True, return detected signs per sample.
+
+    Returns:
+        dict: The updated graph.
+    """
+    stats_keys = stats_keys or ["intensity", "variance", "entropy", "active_dim",
+                                "skewness", "kurtosis", "fractal", "position"]
+
+    signs_found = {}
+
+    sign_vecs = []  # List to store sign vectors
+    sign_ids = []  # List to store sign IDs
+    sign_labels = []  # List to store sign labels
+    for node in graph["nodes"]:
+        if node.get("type") != "sign":
+            continue
+
+        # Set default values for node features
+        node.setdefault("count", 0)
+
+        vec = torch.tensor([node["features"].get(k, 0.0) for k in stats_keys], device=device)
+        sign_vecs.append(vec)
+        sign_ids.append(node["id"])
+        sign_labels.append(node["label"])
+
+    # Stack the vectors to create a 2D tensor
+    sign_vecs = torch.stack(sign_vecs)  # [N_signs, F]
+
+    for i, regions_list in enumerate(extracted_features):
+        if is_inference:
+            signs_found[i] = {}
+
+        for feature_tensor in regions_list:
+            # Calculate cosine similarity all at once
+            sims = fc.cosine_similarity(feature_tensor.unsqueeze(0), sign_vecs, dim=1)
+
+            # Get the most similar sign
+            most_similar_idx = torch.argmax(sims).item()
+            matched_id = sign_ids[most_similar_idx]
+            node = next(n for n in graph["nodes"] if n["id"] == matched_id)
+
+            if update_features: # In training mode
+                __update_most_similar_node(node, feature_tensor, stats_keys)
+
+            if is_inference: # In inference mode, store the results
+                if i not in signs_found:
+                    signs_found[i] = []
+                signs_found[i].append({
+                    "id": sign_ids[most_similar_idx],
+                    "similarity": sims[most_similar_idx].item(),
+                    "label": sign_labels[most_similar_idx],
+                    "stats": __from_tensor_to_dict(feature_tensor, stats_keys)
+                })
+
+    if is_inference:
+        return graph, signs_found
     return graph
+
+def __from_tensor_to_dict(tensor, keys):
+    """
+    Convert a tensor of clinical signs stats to a dictionary using the provided keys.
+    Args:
+        tensor (Tensor): The tensor to convert.
+        keys (list of str): The keys to use for the dictionary.
+    Returns:
+        dict: The converted dictionary.
+    """
+    dict_result = {}
+    for i, key in enumerate(keys):
+        if key == "position":
+            pos_start = len(keys) - 1  # last is 'position'
+            dict_result["position"] = tensor[pos_start:].tolist()
+            #dict_result[key] = tensor[-4:].tolist()
+        else:
+            dict_result[key] = tensor[i].item()
+    return dict_result
+
+def __update_most_similar_node(node, feature_tensor, stats_keys):
+    """
+    Update the most similar node with the new feature tensor.
+    Tensor contains all stats features in order of stats_keys parameter.
+    Position parameter is a list of 4 elements which are the last 4 elements of the tensor.
+    It also updates the node count.
+    Args:
+        node (dict): The node to update.
+        feature_tensor (Tensor): The new feature tensor.
+        stats_keys (list of str): Keys to update in the node features.
+    """
+    # Update the node features with the new feature tensor
+    for i, key in enumerate(stats_keys):
+        if key == "position":
+            # Handle position as 4-dim vector
+            pos_values = feature_tensor[-4:].tolist()
+            if key not in node["features"] or node["count"] == 0:
+                node["features"][key] = pos_values
+            else:
+                node["features"][key] = [
+                    (node["count"] * node["features"][key][j] + pos_values[j]) / (node["count"] + 1)
+                    for j in range(4)
+                ]
+        else:
+            new_val = feature_tensor[i].item()
+            if key not in node["features"] or node["count"] == 0:
+                node["features"][key] = new_val
+            else:
+                # Weighted moving average update
+                prev = node["features"][key]
+                count = node["count"]
+                node["features"][key] = (count * prev + new_val) / (count + 1)
+
+    node["count"] += 1
