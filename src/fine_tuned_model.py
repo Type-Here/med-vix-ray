@@ -220,9 +220,6 @@ class SwinMIMICClassifier(nn.Module):
         # Binary Cross-Entropy for multi-label classification
         loss_fn = loss_fn_param
 
-        # 🔁 XLA_MOD – Load batches with parallel loader
-        train_loader = pl.MpDeviceLoader(train_loader, self.device)
-
         for epoch in range(num_epochs):
             self.train()
             running_loss = 0.0
@@ -251,8 +248,7 @@ class SwinMIMICClassifier(nn.Module):
                     print("Step:", count ," overall steps:", len(train_loader))
                 count += 1
 
-            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss:.4f}")
-
+            print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / len(train_loader):.4f}")
             print("Saving model...")
             # Save model each epoch; xm.get_ordinal() == 0: only save on the first device.
             if xm.get_ordinal() == 0:
@@ -427,7 +423,7 @@ if __name__ == "__main__":
     # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
     training_loader, valid_loader = general.get_dataloaders(
         return_study_id=False, pin_memory=is_cuda,
-        use_bucket=True, verify_existence=False, all_data=True)
+        use_bucket=True, verify_existence=False, full_data=True)
 
     # Train the model
     print("Starting training...")

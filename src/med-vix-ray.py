@@ -844,6 +844,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.current_epoch = epoch
             running_loss = 0.0
             count = 0
+            len_loader = len(train_loader)
 
             # Activate graph guidance only after the defined epoch.
             is_graph_active = (epoch + 1) >= EPOCH_GRAPH_INTEGRATION
@@ -890,6 +891,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
                 running_loss += loss_total.item()
                 count += 1
+                if count % 1000 == 0:
+                    print("Step:", count ," overall steps:", len_loader)
 
             print(f"[TRAIN] Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / count:.4f}")
 
