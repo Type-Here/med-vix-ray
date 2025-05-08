@@ -310,9 +310,6 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
     sign_vecs = torch.stack(sign_vecs)  # [N_signs, F]
 
     for i, regions_list in enumerate(extracted_features):
-        if is_inference:
-            signs_found[i] = {}
-
         for feature_tensor in regions_list:
             # Calculate cosine similarity all at once
             sims = fc.cosine_similarity(feature_tensor.unsqueeze(0), sign_vecs, dim=1)
