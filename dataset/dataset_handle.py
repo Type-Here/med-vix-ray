@@ -384,17 +384,17 @@ def _fetch_metadata_from_csv(phase, full_data=False, verify_existence=False):
         raise ValueError("DATASET_PATH is not set. Please set it in settings.py.")
 
     # Create a dictionary to store the metadata
-    metadata = {}
-    for i, row in dataset.iterrows():
-        dicom_id = row['dicom_id']
-        metadata[i] = {
-            'dicom_id': dicom_id,
+    metadata = []
+    for _, row in dataset.iterrows():
+        entry = {
+            'dicom_id': str(row['dicom_id']),
             'labels': row[MIMIC_LABELS].tolist(),
             'study_id': str(row['study_id']),
-            'view_position': row['ViewPosition'], # AP or PA
-            'subject_id': str(row['subject_id'])
+            'view_position': row['ViewPosition'],
+            'subject_id': str(row['subject_id']),
         }
-        metadata[i]['path'] = __compose_image_path(metadata[i])
+        entry['path'] = __compose_image_path(entry)
+        metadata.append(entry)
 
     # Save the metadata to a pickle file
     pickle_name = f'{phase}_metadata.pkl' if full_data else f'{phase}_partial_data.pkl'
@@ -472,7 +472,7 @@ def __verify_existence(metadata, dataset_dir):
     """
         Verify the existence of the images in the dataset directory.
         Args:
-            metadata (dict): Dictionary containing the metadata.
+            metadata (list): List containing the metadata as dictionaries.
             dataset_dir (str): Directory where the images are stored.
         Returns:
             dict: Dictionary containing the metadata with verified image paths.
@@ -481,7 +481,7 @@ def __verify_existence(metadata, dataset_dir):
     if not os.path.exists(dataset_dir):
         raise FileNotFoundError(f"[ERROR] Dataset directory {dataset_dir} does not exist.")
 
-    for i, data in metadata.items():
+    for i, data in enumerate(metadata):
         if not os.path.exists(os.path.join(dataset_dir, data['path'])):
             print(f"[-] Image {data['path']} does not exist. Removing from metadata.")
             # Remove the image from the metadata

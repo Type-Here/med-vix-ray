@@ -125,14 +125,22 @@ class ImagePreprocessor(Dataset):
         apply transformations and return the preprocessed images along with their labels.
 
         Parameters:
-            image_paths (list): List of paths to the images.
-            image_labels (dict): Dictionary with image name for key, and list of labels for value.
-            Should be already aligned with the image_paths.
+            data_dict (list): List of dictionaries with all image paths and labels.
+                Each key should be an index containing a dict for each image.
+                Structure of dictionary:
+                {
+                    "path": image_path,
+                    "study_id": study_id,
+                    "dicom_id": dicom_id,
+                    "subject_id": subject_id,
+                    "label": [label1, label2, ...],
+                    "view_position": view_position
+                }
             transform (callable, optional): Optional transform to be applied on a sample.
             image_size (tuple): Desired output size of the image.
             channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
-        :returns: tuple(torch.Tensor, torch.Tensor): Preprocessed image tensor; List of labels for the image.
-        :rtype: tuple
+        Returns:
+            tuple(torch.Tensor, torch.Tensor): Preprocessed image tensor; List of labels for the image.
     """
     def __init__(self, data_dict, transform = None, image_size=(256, 256),
                  channels_mode="L", return_study_id=False, use_bucket=False):
@@ -141,16 +149,16 @@ class ImagePreprocessor(Dataset):
         `data_dict` structure:
             Each key should be an index containing a dict for each image.
             Structure of dictionary:
-            {idx: {
+            {
                 "path": image_path,
                 "study_id": study_id,
                 "dicom_id": dicom_id,
                 "subject_id": subject_id,
                 "label": [label1, label2, ...],
                 "view_position": view_position
-            }}
+            }
         Parameters:
-            data_dict (dict): Dictionary with all
+            data_dict (list): List of dictionaries with all image paths and labels.
             transform (callable, optional): Optional transform to be applied on a sample (already opened image).
             image_size (tuple): Desired output size of the image.
             channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
@@ -163,8 +171,7 @@ class ImagePreprocessor(Dataset):
         self.image_size = image_size
         self.data_dict = data_dict
 
-
-        for _, img_dict in data_dict.items():
+        for img_dict in data_dict:
             prefix = "gs://" + BUCKET_PREFIX_PATH if use_bucket else DATASET_PATH
             img_dict["path"] = os.path.join(prefix, img_dict["path"])
         self.use_bucket = use_bucket
