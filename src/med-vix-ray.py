@@ -400,8 +400,10 @@ class GraphNudger(nn.Module):
     def __init__(self, eta=0.01):
         super(GraphNudger, self).__init__()
         self.eta = eta  # Nudging learning rate
+        self.sign_to_diseases = None  # Dictionary to store sign-to-disease mappings
 
-    def forward(self, heatmap_features_batch, keys_order, graph, num_diseases, grad_output_batch):
+    def forward(self, device, signs_found, graph,
+                num_diseases, grad_output_batch):
         """
         Compute a nudging bias vector for each sample in the batch based on the difference
         between the extracted heatmap features and the stored features in the graph's sign nodes.
@@ -411,60 +413,48 @@ class GraphNudger(nn.Module):
             Δb_d^(i) = η * ∑_{edge: source=d, type='finding'} (w_{d,s} * sim(f_att^(i), f_s) * g^(i))
 
         where:
-          - f_att^(i) is the heatmap feature vector for sample i,
-          - f_s is the stored feature vector for the sign node,
+          - f_att^(i) is the heatmap sign related to sample i,
+          - f_s is the stored sign node,
           - sim(·,·) is the cosine similarity (normalized to [0,1]),
           - g^(i) is the gradient vector for sample i (elementwise used),
           - w_{d,s} is the edge weight.
 
         Args:
-            heatmap_features_batch (torch.Tensor): [B, f_dim]
-            keys_order (list of str): feature order used in stored sign node features
+            device (torch.device): device to use for computations (CPU or GPU).
+            signs_found (dict): dictionary with sign node IDs as keys and their features as values.
             graph (dict): the full graph (nodes + links)
             num_diseases (int): number of disease classes
-            grad_output_batch (torch.Tensor): [B, f_dim] classifier grad wrt features
+            grad_output_batch (torch.Tensor): [B, f_dim] classifier gradient output
 
         Returns:
             torch.Tensor: [B, num_diseases] nudging bias
         """
-        device = heatmap_features_batch.device
-        batch, f_dim = heatmap_features_batch.shape
+        from collections import defaultdict
+
+        batch = grad_output_batch.size(0)
         nudges = torch.zeros(batch, num_diseases, device=device)
 
-        # Build sign node id → stored feature vector (torch.Tensor)
-        sign_features = {}
-        for node in graph["nodes"]:
-            if node.get("type") == "sign" and "features" in node:
-                feature_vec = torch.tensor(
-                    [_compute_feature_vector(node["features"], keys=keys_order)],
-                    dtype=torch.float32,
-                    device=device
-                ).squeeze(0)  # [f_dim]
-                sign_features[int(node["id"])] = feature_vec
+        self.sign_to_diseases = defaultdict(list)
+
+        for edge in graph["links"]:
+            if edge["relation"] == "finding":
+                d = int(edge["source"])
+                s = int(edge["target"])
+                w = edge.get("weight", 1.0)
+                self.sign_to_diseases[s].append((d, w))
+
+        # Get the Gradient for the current sample
+        grad_norms = torch.norm(grad_output_batch, dim=1)  # [B]
 
         # Process each sample
         for i in range(batch):
-            f_vec = heatmap_features_batch[i]  # [f_dim]
-            grad = grad_output_batch[i]
-            grad_factor = torch.norm(grad)
-
-            for edge in graph["links"]:
-                if edge["relation"] != "finding":
-                    continue
-                d = int(edge["source"])
-                s = int(edge["target"])
-                weight = edge.get("weight", 1.0)
-
-                if s not in sign_features:
-                    continue
-
-                stored_vec = sign_features[s]  # [f_dim]
-
-                # Cosine similarity (normalized to [0,1])
-                sim = torch.nn.functional.cosine_similarity(f_vec, stored_vec, dim=0)
-                sim = (sim + 1.0) / 2.0
-
-                nudges[i, d] += self.eta * weight * sim * grad_factor
+            g = grad_norms[i].item()
+            list_of_signs = signs_found[i] # Get list of dicts containing sign node IDs and their features
+            for s_dict in list_of_signs:
+                sim = s_dict.get("similarity", 0)
+                s_id = int(s_dict["id"])
+                for d, w in self.sign_to_diseases.get(s_id, []):
+                    nudges[i, d] += self.eta * w * sim * g
 
         return nudges
 
@@ -734,55 +724,44 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # 4b. Update graph from extracted features
         # Update the graph with the new feature statistics.
-        xai_fe.find_match_and_update_graph_features(
+        _ , signs_found = xai_fe.find_match_and_update_graph_features(
             self.graph,
             extracted_features=features_dict_batch,
             device=self.device,
             update_features=self.training,
-            is_inference=self.is_inference
+            is_inference=self.is_inference or use_graph_guidance
         )
 
         # 1a. If graph guidance is not active return the classifier logits directly.
         if not use_graph_guidance:
             return self.classifier_logits
 
-        # 5a. Build heatmap_features_batch for nudger
-        heatmap_features_batch = torch.stack([
-            features_dict_batch["intensity"],
-            features_dict_batch["variance"],
-            features_dict_batch["entropy"],
-            features_dict_batch["active_dim"],
-            features_dict_batch["skewness"],
-            features_dict_batch["kurtosis"],
-            features_dict_batch["fractal"],
-        ], dim=1)  # shape [B, 7]
 
-        # 5b. Compute the graph bias using the Nudger module.
+        # 5. Compute the graph bias using the Nudger module.
         # Use the attention map features and stats features.
         if self.is_using_nudger:
             grad_output_batch = (
                 self.classifier_grad if self.classifier_grad is not None
-                else torch.ones_like(heatmap_features_batch)
+                else torch.ones_like(self.classifier_logits)
             )
 
             update_vector = self.graph_nudger(
-                heatmap_features_batch=heatmap_features_batch,
-                keys_order=self.stats_keys,
+                device=self.device,
+                signs_found=signs_found,
                 graph=self.graph,
                 num_diseases=len(MIMIC_LABELS),
                 grad_output_batch=grad_output_batch
             )
-
             # Transfer the update vector to the same device as the classifier logits.
             update_vector = update_vector.to(self.device)
 
-            # 7a. Then final logits become:
+            # 6a. Then final logits become:
             final_logits = self.classifier_logits + update_vector  # where classifier_logits is [B, num_diseases]
         else:
-            # 7a.2 If nudging is not used, we can still compute the graph bias.
+            # 6a.2 If nudging is not used, we can still compute the graph bias.
             final_logits = self.classifier_logits
 
-        # 8. Return the final logits.
+        # 7. Return the final logits.
         return final_logits
 
     def _save_classifier_grad(self, grad):

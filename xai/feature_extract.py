@@ -295,10 +295,10 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
             matched_id = sign_ids[most_similar_idx]
             node = next(n for n in graph["nodes"] if n["id"] == matched_id)
 
-            if update_features: # In training mode
+            if update_features:  # In training mode
                 __update_most_similar_node(node, feature_tensor, stats_keys)
 
-            if is_inference: # In inference mode, store the results
+            if is_inference:  # In inference mode, store the results
                 if i not in signs_found:
                     signs_found[i] = []
                 signs_found[i].append({
