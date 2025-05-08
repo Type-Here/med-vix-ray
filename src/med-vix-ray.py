@@ -819,7 +819,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             print(f"[INFO]: Found already partially trained model."
                   f" - Restarting training from epoch {self.current_epoch + 1}."
-                  f" Remaining epochs: {num_epochs - self.current_epoch}")
+                  f" Remaining epochs: {num_epochs - (self.current_epoch + 1)}")
 
         else:
             print("[INFO]: Starting training from scratch.")
