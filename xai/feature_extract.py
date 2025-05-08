@@ -18,7 +18,20 @@ def _binarize_maps(heatmap: torch.Tensor, threshold: float) -> torch.Tensor:
     """
     return (heatmap > threshold).float()
 
-def _label_connected_components(binary: torch.Tensor, max_labels: int = 50) -> torch.Tensor:
+def _label_connected_components_kornia(binary: torch.Tensor, max_labels: int = 10) -> torch.Tensor:
+        """
+        GPU-accelerated connected components via Kornia.
+        """
+        import kornia.contrib as km
+        # binary: [H, W], torch.float
+        # add batch & channel dims
+        comp = km.connected_components(binary.unsqueeze(0).unsqueeze(0).float())
+        # comp: [1,1,H,W] with labels 0...N
+        label_map = comp[0, 0].to(torch.int32)
+        # optional: clamp to max_labels
+        return torch.clamp(label_map, max=max_labels) # [0..max_labels]
+
+def _label_connected_components(binary: torch.Tensor, max_labels: int = 10) -> torch.Tensor:
     """
     Label connected components in a binary map via iterative dilation (8-neighborhood).
     Args:
@@ -47,7 +60,7 @@ def _label_connected_components(binary: torch.Tensor, max_labels: int = 50) -> t
         remaining = remaining * (1 - seed)
         label_id += 1
 
-    return label_map
+    return label_map # [H, W] with labels 0..n
 
 # --- REGION STATS COMPUTATION --- #
 
@@ -174,12 +187,20 @@ def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: t
         thresholds = [threshold] * batch
 
     return_features = []
-
+    print_msg = True
     # Process each image
     for i in range(batch):
         heatmap = normalized_maps[i] # Normalized heatmap [H, W]
         binary = _binarize_maps(heatmap, thresholds[i]) # Binary map [H, W]
-        labeled = _label_connected_components(binary, max_labels=10)  # Limit max regions
+        try:
+            labeled = _label_connected_components_kornia(binary, max_labels=10)  # Limit max regions
+        except (RuntimeError, ModuleNotFoundError) as e:
+            if print_msg:
+                print(f"[WARN] Error in connected components kornia labeling: {e},"
+                  f" trying np version.")
+            print_msg = False
+            labeled = _label_connected_components(binary, max_labels=10)
+
 
         # Extract stats for top regions by size
         regions = []
