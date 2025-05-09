@@ -484,6 +484,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         super(SwinMIMICGraphClassifier, self).__init__(num_classes=num_classes)
 
+        # Flag for inference mode
+        self.is_inference = False
+
         # Set create optimizer to custom function
         self._create_optimizer = src.train_helpers.create_optimizer
         # Set placeholder for learning rate scheduler and classifier
@@ -829,7 +832,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             print(f"[INFO]: Found already partially trained model."
                   f" - Restarting training from epoch {self.current_epoch + 1}."
-                  f" Remaining epochs: {num_epochs - self.current_epoch}")
+                  f" Remaining epochs: {num_epochs - (self.current_epoch + 1)}")
 
         else:
             print("[INFO]: Starting training from scratch.")
@@ -979,27 +982,31 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         print("Warning: Loading model state dict and graph JSON. This will override the current model state.")
 
         if state_dict_path is None:
+            print(" - State dict path not provided. Loading default state dict.")
             state_dict_path = os.path.join(MODELS_DIR, 'med_vixray_model_state.pth')
+            if not os.path.exists(state_dict_path):
+                raise FileNotFoundError(f"State dict file not found at {state_dict_path}.")
+
         if graph_json is None:
-            graph_json = os.path.join(MODELS_DIR, 'med_vixray_model_graph.json')
+            print(" - Graph JSON not provided. Loading default graph JSON.")
+            graph_path = os.path.join(MODELS_DIR, 'med_vixray_model_graph.json')
+            if not os.path.exists(graph_path):
+                raise FileNotFoundError(f"Graph JSON file not found at {graph_path}.")
+            with open(graph_path, 'r') as graph_file:
+                graph_json = json.load(graph_file)
 
         # Load the state dict from the specified path.
         checkpoint = torch.load(state_dict_path, map_location=self.device, weights_only=False)
         # Load the model state dict.
         self.load_state_dict(checkpoint["model_state_dict"])
 
-        if checkpoint.get("graph") is not None:
-            self.graph = checkpoint["graph"]
-            print(" - Graph loaded from checkpoint.")
-        else:
-            print(" - Graph not found in checkpoint. Using the provided graph JSON.")
-            with open(graph_json, 'r') as graph_file:
-                self.graph = json.load(graph_file)
+        self.graph = graph_json
+        print(" - Graph Json Assigned.")
 
         num_signs = len(self.graph["nodes"]) - len(MIMIC_LABELS)
 
         if checkpoint.get("graph_matrix") is not None:
-            self.graph = checkpoint["graph_matrix"]
+            self.graph_matrix = checkpoint["graph_matrix"]
             print(" - Graph Matrix loaded from checkpoint.")
         else:
             print(" - Graph Matrix not found in checkpoint. Building it...")

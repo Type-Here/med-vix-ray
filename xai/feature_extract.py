@@ -268,7 +268,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
     Updates the graph nodes (type="sign") with feature statistics from matched regions.
 
     Args:
-        graph (dict): Graph JSON containing "nodes" (and optionally "links").
+        graph (dict): Graph JSON containing "nodes".
         extracted_features (list[list[Tensor]]): List of lists of feature dictionaries.
         device (torch.device): Device for tensor operations.
         First list is over batch, second is over regions for each image.
@@ -295,7 +295,13 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
         # Set default values for node features
         node.setdefault("count", 0)
 
-        vec = torch.tensor([node["features"].get(k, 0.0) for k in stats_keys], device=device)
+        vec = torch.tensor([node["features"].get(k, 0.0) for k in stats_keys if k != "position"],
+                            device=device)
+        # Add position as a separate feature
+        pos = node["features"].get("position", [0.5, 0.5, 0.5, 0.5])
+        pos_tensor = torch.tensor(pos, device=device)
+        vec = torch.cat((vec, pos_tensor))
+
         sign_vecs.append(vec)
         sign_ids.append(node["id"])
         sign_labels.append(node["label"])
@@ -304,9 +310,6 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
     sign_vecs = torch.stack(sign_vecs)  # [N_signs, F]
 
     for i, regions_list in enumerate(extracted_features):
-        if is_inference:
-            signs_found[i] = {}
-
         for feature_tensor in regions_list:
             # Calculate cosine similarity all at once
             sims = fc.cosine_similarity(feature_tensor.unsqueeze(0), sign_vecs, dim=1)
