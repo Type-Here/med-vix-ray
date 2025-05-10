@@ -883,12 +883,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             print(f"[TRAIN] Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / count:.4f}")
 
+            # Save model each epoch to not lose progress.
+            self.save_all()
+
             # Validation step for early stopping verification and lr scheduler step.
             if use_validation and self._validate_in_training(loss_fn, epoch, validation_loader=validation_loader):
                 break
-
-            # Save model each epoch to not lose progress.
-            self.save_all()
 
         # Set the model back to evaluation mode.
         self.eval()
