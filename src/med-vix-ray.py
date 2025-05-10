@@ -915,7 +915,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                     images_val = images_val.to(self.device)
                     labels_val = labels_val.to(self.device)
 
-                    val_logits = self.forward(images_val, use_graph_guidance=False)
+                    val_logits = self.forward(images_val, use_graph_guidance=True)
                     val_loss = loss_fn(val_logits, labels_val)
 
                     val_running_loss += val_loss.item()

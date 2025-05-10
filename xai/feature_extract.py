@@ -278,7 +278,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
         is_inference (bool): If True, return detected signs per sample.
 
     Returns:
-        dict: The updated graph.
+        tuple: Updated graph and a dictionary of found signs (if is_inference=True, otherwise None).
     """
     stats_keys = stats_keys or ["intensity", "variance", "entropy", "active_dim",
                                 "skewness", "kurtosis", "fractal", "position"]
@@ -334,7 +334,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
 
     if is_inference:
         return graph, signs_found
-    return graph
+    return graph, None
 
 def __from_tensor_to_dict(tensor, keys):
     """
