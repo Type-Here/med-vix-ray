@@ -3,6 +3,7 @@ import torch
 import os
 import torch.nn as nn
 import numpy as np
+from sklearn.metrics import accuracy_score, f1_score
 
 import src.train_helpers
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
@@ -908,6 +909,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.eval()
             val_running_loss = 0.0
             val_count = 0
+            val_labels = []
+            val_preds = []
 
             # Validation loop
             with torch.no_grad():
@@ -920,6 +923,17 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
                     val_running_loss += val_loss.item()
                     val_count += 1
+
+                    # Compute accuracy and f1 score
+                    preds = torch.sigmoid(val_logits).cpu().numpy()
+
+                    val_labels.append(labels_val.cpu().numpy())
+                    val_preds.append((preds > 0.5).astype(int))
+
+                val_accuracy = accuracy_score(val_labels, val_preds)
+                val_f1 = f1_score(val_labels, val_preds, average='macro')
+
+                print(f"[VAL] Epoch {epoch + 1} - Accuracy: {val_accuracy:.4f}, F1 Score: {val_f1:.4f}")
 
             val_loss_epoch = val_running_loss / val_count
             print(f"[VAL] Epoch {epoch + 1} - Validation Loss: {val_loss_epoch:.4f}")
