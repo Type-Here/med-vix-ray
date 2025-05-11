@@ -1057,8 +1057,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.save_model(path)
         except Exception as e:
             print(f"[ERROR] Error saving whole model: {e}")
+
         self.save_graph(path.replace('.pth', '_graph.json'))
+        print(f"[INFO] Graph saved to {path}")
         self.save_state(path.replace('.pth', '_state.pth'))
+        print(f"[INFO] Model state saved to {path.replace('.pth', '_state.pth')}")
 
 
 if __name__ == "__main__":
