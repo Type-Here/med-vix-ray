@@ -692,6 +692,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             (uses the attention map and stats feature in sign nodes).
             Set the flag accordingly in the training loop.
         """
+        self.classifier_grad = None  # Reset the classifier gradient for each forward pass.
 
         # 1b. Else, if graph guidance is active, use graph
         if use_graph_guidance and not self.is_graph_used:
