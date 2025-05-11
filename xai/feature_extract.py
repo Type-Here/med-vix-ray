@@ -283,7 +283,9 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
     stats_keys = stats_keys or ["intensity", "variance", "entropy", "active_dim",
                                 "skewness", "kurtosis", "fractal", "position"]
 
-    signs_found = {}
+    # Initialize signs_found with empty lists for all batch indices
+    batch_size = len(extracted_features)
+    signs_found = {i: [] for i in range(batch_size)}
 
     sign_vecs = []  # List to store sign vectors
     sign_ids = []  # List to store sign IDs
