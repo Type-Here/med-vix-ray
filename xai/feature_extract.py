@@ -334,9 +334,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
                     "stats": __from_tensor_to_dict(feature_tensor, stats_keys)
                 })
 
-    if is_inference:
-        return graph, signs_found
-    return graph, None
+    return graph, signs_found
 
 def __from_tensor_to_dict(tensor, keys):
     """
