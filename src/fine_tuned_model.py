@@ -471,8 +471,10 @@ if __name__ == "__main__":
 
     # Check for device
     print("Checking for device...")
-    t_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    is_cuda = torch.cuda.is_available()
+    t_device = torch.device("cpu" if torch.version.hip else
+                            ("cuda" if torch.cuda.is_available() else "cpu"))
+    is_cuda = torch.cuda.is_available() and not torch.version.hip
+    # ROCm is not supported yet
     print(f"Using device: {t_device}")
 
     # Initialize the SwinMIMICClassifier
