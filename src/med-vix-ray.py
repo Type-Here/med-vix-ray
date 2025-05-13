@@ -8,14 +8,15 @@ from sklearn.metrics import accuracy_score, f1_score
 import src.train_helpers
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
     MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, \
-    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH, INJECT_BIAS_FROM_THIS_LAYER, EARLY_STOPPING_PATIENCE
+    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH, INJECT_BIAS_FROM_THIS_LAYER, EARLY_STOPPING_PATIENCE, \
+    LEARNING_RATE_INPUT_LAYER
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
 
 import xai.attention_map as attention
 import xai.feature_extract as xai_fe
 import xai.edges_stats_update as update_edges
-from src.train_helpers import CustomLRScheduler, EarlyStopper
+from src.train_helpers import CustomLRScheduler, EarlyStopper, focal_loss
 
 
 def _compute_batch_features_vectors(features_dict, keys_order=None):
@@ -769,8 +770,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
     def train_model(self, train_loader, num_epochs=NUM_EPOCHS,
                     learning_rate_swin=LEARNING_RATE_TRANSFORMER,
                     learning_rate_classifier=LEARNING_RATE_CLASSIFIER,
-                    layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None,
-                    loss_fn_param=nn.BCEWithLogitsLoss(), lambda_reg=LAMBDA_REG,
+                    learning_rate_input=LEARNING_RATE_INPUT_LAYER,
+                    layers_to_unblock=UNBLOCKED_LEVELS,
+                    loss_fn_param=focal_loss,
+                    optimizer_param=None,
+                    lambda_reg=LAMBDA_REG,
                     patience=EARLY_STOPPING_PATIENCE, use_validation=True,
                     validation_loader=None):
         """
@@ -788,6 +792,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             num_epochs (int): Number of epochs to train.
             learning_rate_swin (float): Learning rate for the transformer blocks.
             learning_rate_classifier (float): Learning rate for the classifier head.
+            learning_rate_input (float): Learning rate for the input layer.
             layers_to_unblock (int): Number of layers to unblock in the Swin Transformer.
             optimizer_param (torch.optim.Optimizer, optional): Optimizer for training. If None, defaults to AdamW.
             loss_fn_param (callable, optional): Loss function. If None, defaults to BCEWithLogitsLoss.
@@ -804,8 +809,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self._unblock_layers(layers_to_unblock)
 
         # Define optimizer with parameter groups.
-        optimizer = self._create_optimizer(self, layers_to_unblock, learning_rate_swin,
-                                           learning_rate_classifier, optimizer_param)
+        optimizer = self._create_optimizer(self, layers_to_unblock,
+                                           learning_rate_input=learning_rate_input,
+                                           learning_rate_swin=learning_rate_swin,
+                                           learning_rate_classifier=learning_rate_classifier,
+                                           optimizer_param=optimizer_param)
 
         # Attach Custom LR Scheduler
         self._lr_scheduler = CustomLRScheduler(optimizer)
@@ -892,7 +900,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.save_all()
 
             # Validation step for early stopping verification and lr scheduler step.
-            if use_validation and self._validate_in_training(loss_fn, epoch, validation_loader=validation_loader):
+            if (use_validation and self._validate_in_training(loss_fn, epoch,
+                                            validation_loader=validation_loader)):
                 break
 
         # Set the model back to evaluation mode.
