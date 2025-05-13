@@ -870,12 +870,15 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 loss_total.backward()
                 optimizer.step()
 
-                for i, study_id in enumerate(study_ids):
-                    # Update the graph with the new weights.
-                    # This function updates the weights of the edges in the graph based on the classifier logits.
-                    self.graph_attention_module.update_edge_weights_with_ground_truth(
-                        self.graph, study_id, labels[i].cpu().numpy()
-                    )
+                # Update of the graph weights is done with ground truth labels
+                # This is done only for the first two epochs to avoid useless updates
+                if self.current_epoch < 2:
+                    for i, study_id in enumerate(study_ids):
+                        # Update the graph with the new weights.
+                        # This function updates the weights of the edges in the graph based on the classifier logits.
+                        self.graph_attention_module.update_edge_weights_with_ground_truth(
+                            self.graph, study_id, labels[i].cpu().numpy()
+                        )
 
                 running_loss += loss_total.detach().item()
 
