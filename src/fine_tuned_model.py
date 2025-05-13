@@ -1,4 +1,5 @@
 import json
+import sys
 
 import torch
 import timm
@@ -11,6 +12,8 @@ from matplotlib import pyplot as plt
 
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
+
+#sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Dataset path
 from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, SWIN_MODEL_DIR
@@ -164,6 +167,10 @@ class SwinMIMICClassifier(nn.Module):
         # Permute dimensions to get (B, C, H, W)
         features = features.permute(0, 3, 1, 2)  # Now shape: [16, 1024, 8, 8]
 
+        # Check for NaN or Inf in input tensor
+        #if torch.isnan(features).any() or torch.isinf(features).any():
+        #    raise ValueError("FEATURES contains NaN or Inf values.")
+
         # Pooling to get [B, 1024, 1, 1]
         pooled = torch.nn.functional.adaptive_avg_pool2d(features, (1, 1))
 
@@ -314,6 +321,9 @@ class SwinMIMICClassifier(nn.Module):
         all_labels = []
         all_scores = []
 
+        # Number of batches
+        num_batches = len(testing_loader)
+
         with torch.no_grad():
             for images, labels in testing_loader:
                 images = images.to(self.device)
@@ -323,6 +333,12 @@ class SwinMIMICClassifier(nn.Module):
                 probs = torch.sigmoid(logits).cpu().numpy()
                 all_scores.append(probs)
                 all_labels.append(labels.cpu().numpy())
+
+                if len(all_labels) % 200 == 0:
+                    print("Step:", len(all_labels), "overall steps:", num_batches)
+                # Early exit for debugging
+                if len(all_labels) > 100:
+                    break
 
         y_true = np.vstack(all_labels)  # shape [N, C]
         y_score = np.vstack(all_scores)  # shape [N, C]
@@ -458,7 +474,7 @@ class SwinMIMICClassifier(nn.Module):
             raise FileNotFoundError(f"Model file not found: {path}")
 
         # Load the src state
-        self.swin_model.load_state_dict(
+        self.load_state_dict(
             torch.load(path,
                        map_location="cuda" if torch.cuda.is_available() else "cpu")
         )
@@ -495,6 +511,7 @@ if __name__ == "__main__":
     if os.path.exists(model_state_path):
         print(f"[INFO] Found model state in {model_state_path}; Loading it...")
         ft_model.load_model(model_state_path)
+        print("Model loaded.")
     else:
 
         print(f"[INFO] Model state not found in {model_state_path}; Training a new model...")
@@ -516,6 +533,7 @@ if __name__ == "__main__":
 
     # Any case: Evaluate the model
 
+    print("Loading test dataset...")
     test_loader = general.get_test_dataloader(pin_memory=is_cuda,use_bucket=True,
                                               verify_existence=False, full_data=True)
 
