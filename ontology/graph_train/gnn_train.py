@@ -2,7 +2,7 @@ import spacy
 from gensim.models import KeyedVectors
 from difflib import get_close_matches
 from settings import SIMILARITY_THRESHOLD, POSITIVE_WEIGHT_CORR, NEGATIVE_WEIGHT_CORR, POSITIVE_WEIGHT_FINDING, \
-    NEGATIVE_WEIGHT_FINDING
+    NEGATIVE_WEIGHT_FINDING, MIMIC_LABELS
 
 # ========================================================== NODES VALUES ATTRIBUTION =========================================================
 
@@ -23,22 +23,7 @@ def map_labels_to_ids(label):
         :rtype: str
     """
 
-    label_to_id = {
-        "Atelectasis": 0,
-        "Cardiomegaly": 1,
-        "Consolidation": 2,
-        "Edema": 3,
-        "Enlarged Cardiomediastinum": 4,
-        "Fracture": 5,
-        "Lung Lesion": 6,
-        "Lung Opacity": 7,
-        "No Finding": 13,
-        "Pleural Effusion": 8,
-        "Pleural Other": 9,
-        "Pneumonia": 10,
-        "Pneumothorax": 11,
-        "Support Devices": 12
-    }
+    label_to_id = MIMIC_LABELS
     return str(label_to_id.get(label, -1))  # Return -1 if label not found
 
 
