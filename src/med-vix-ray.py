@@ -3,6 +3,7 @@ import torch
 import os
 import torch.nn as nn
 import numpy as np
+from sklearn.metrics import accuracy_score, f1_score
 
 # XLA_MOD
 import torch_xla
@@ -701,6 +702,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             (uses the attention map and stats feature in sign nodes).
             Set the flag accordingly in the training loop.
         """
+        self.classifier_grad = None  # Reset the classifier gradient for each forward pass.
 
         # 1b. Else, if graph guidance is active, use graph
         if use_graph_guidance and not self.is_graph_used:
@@ -892,7 +894,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                         self.graph, study_id, labels[i].detach().cpu().numpy()
                     )
 
-                running_loss += loss_total.item()
+                running_loss += loss_total.detach().item()
+
                 count += 1
                 if count % 1000 == 0:
                     print("Step:", count ," overall steps:", len_loader)
@@ -925,6 +928,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.eval()
             val_running_loss = 0.0
             val_count = 0
+            val_labels = []
+            val_preds = []
 
             validation_loader = pl.MpDeviceLoader(validation_loader, self.device)
 
@@ -934,11 +939,26 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                     images_val = images_val.to(self.device)
                     labels_val = labels_val.to(self.device)
 
-                    val_logits = self.forward(images_val, use_graph_guidance=False)
+                    val_logits = self.forward(images_val, use_graph_guidance=True)
                     val_loss = loss_fn(val_logits, labels_val)
 
                     val_running_loss += val_loss.item()
                     val_count += 1
+
+                    # Compute accuracy and f1 score
+                    preds = torch.sigmoid(val_logits).cpu().numpy()
+
+                    val_labels.append(labels_val.cpu().numpy())
+                    val_preds.append((preds > 0.5).astype(int))
+
+            # Concatenate all labels and predictions
+            val_labels_concat = np.concatenate(val_labels,axis=0)
+            val_preds_concat = np.concatenate(val_preds,axis=0)
+
+            val_accuracy = accuracy_score(val_labels_concat, val_preds_concat)
+            val_f1 = f1_score(val_labels_concat, val_preds_concat, average='macro')
+
+            print(f"[VAL] Epoch {epoch + 1} - Accuracy: {val_accuracy:.4f}, F1 Score: {val_f1:.4f}")
 
             val_loss_epoch = val_running_loss / val_count
             print(f"[VAL] Epoch {epoch + 1} - Validation Loss: {val_loss_epoch:.4f}")
@@ -1062,8 +1082,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.save_model(path)
         except Exception as e:
             print(f"[ERROR] Error saving whole model: {e}")
+
         self.save_graph(path.replace('.pth', '_graph.json'))
+        print(f"[INFO] Graph saved to {path}")
         self.save_state(path.replace('.pth', '_state.pth'))
+        print(f"[INFO] Model state saved to {path.replace('.pth', '_state.pth')}")
 
 
 if __name__ == "__main__":
@@ -1127,7 +1150,7 @@ if __name__ == "__main__":
     training_loader, valid_loader = general.get_dataloaders(return_study_id=True,
                                                             return_val_loader=True,
                                                             pin_memory=is_cuda,
-                                                            use_bucket=True, verify_existence=False, all_data=True)
+                                                            use_bucket=True, verify_existence=False, full_data=True)
 
     # Train the model
     print("Starting training of Med-ViX-Ray...")

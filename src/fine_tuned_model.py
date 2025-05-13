@@ -1,3 +1,6 @@
+import json
+import sys
+
 import torch
 import timm
 import os
@@ -5,6 +8,7 @@ import torch.nn as nn
 import numpy as np
 import torchvision.transforms as transforms
 import torch.optim as optim
+from matplotlib import pyplot as plt
 
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
@@ -24,7 +28,8 @@ from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, SWIN_MODEL_DIR
 from settings import NUM_EPOCHS, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
 from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
 
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, roc_curve, \
+    precision_recall_curve, average_precision_score
 
 from src import general
 
@@ -61,7 +66,22 @@ def vit_loader():
 
 
 # ================================================ MIMIC SWIN CLASSIFIER ===============================================
+def _swin_loader_rgb(evaluation: bool=False, num_classes: int=0) -> nn.Module:
+    """
+    Carica SwinV2 pretrained ms_in1k, senza toccare patch_embed
+    e senza classifier head (num_classes=0 + head=Identity).
+    """
+    model = timm.create_model(
+        "swinv2_base_window8_256.ms_in1k",
+        pretrained=True,
+        num_classes=num_classes,
+    )
 
+    # Remove final classifier to extract features
+    model.head = nn.Identity() # Identity() removes the classifier head by replacing it with an identity function
+    if evaluation:
+        model.eval()
+    return model
 
 def _swin_loader(evaluation=False, num_classes=14) -> nn.Module:
     """
@@ -102,6 +122,9 @@ def _swin_loader(evaluation=False, num_classes=14) -> nn.Module:
     # Copy the weights from the original conv layer, averaging across channels
     new_conv1.weight.data = conv1.weight.mean(dim=1, keepdim=True)
 
+    # Copy the bias if it exists
+    new_conv1.bias.data = conv1.bias.data
+
     # Replace the first conv layer in the src
     model.patch_embed.proj = new_conv1
 
@@ -140,7 +163,7 @@ class SwinMIMICClassifier(nn.Module):
             :param num_classes: Number of output classes (default: 14 for MIMIC-CXR).
         """
         super(SwinMIMICClassifier, self).__init__()
-        self.swin_model = _swin_loader(num_classes=num_classes)
+        self.swin_model = _swin_loader_rgb(num_classes=num_classes)
 
         # New classifier head
         self.classifier = nn.Sequential(
@@ -169,6 +192,10 @@ class SwinMIMICClassifier(nn.Module):
 
         # Permute dimensions to get (B, C, H, W)
         features = features.permute(0, 3, 1, 2)  # Now shape: [16, 1024, 8, 8]
+
+        # Check for NaN or Inf in input tensor
+        #if torch.isnan(features).any() or torch.isinf(features).any():
+        #    raise ValueError("FEATURES contains NaN or Inf values.")
 
         # Pooling to get [B, 1024, 1, 1]
         pooled = torch.nn.functional.adaptive_avg_pool2d(features, (1, 1))
@@ -294,66 +321,205 @@ class SwinMIMICClassifier(nn.Module):
         # for param in self.swin_model.head.parameters():
         #    param.requires_grad = True
 
-    def model_evaluation(self, val_loader, threshold=0.5, save_stats=True):
+    def model_evaluation(self, testing_loader, threshold: float = 0.5,
+                         save_stats: bool = True, out_dir: str = None):
         """
-        Evaluate the src using scikit-learn metrics for multi-label classification.
-        Args:
-            val_loader: DataLoader for validation data.
-            threshold: Threshold for binary classification.
-            save_stats: If True, save the evaluation metrics to a file.
-        Returns:
-            Dictionary with evaluation metrics.
-        """
+          Evaluate the model on a dataloader, calculate multilabel metrics, and plot:
+            - ROC curves (macro)
+            - Precision-Recall curves (macro)
+          Saves both the values and the plots.
+
+          Args:
+              testing_loader (DataLoader): DataLoader for testing/validation.
+              threshold (float): Threshold to binarize predictions.
+              save_stats (bool): If True, saves metrics and plots to disk.
+              out_dir (str): Directory to save the files.
+
+          Returns:
+              dict: All calculated metrics + paths to the plots.
+          """
+        # Default to current folder + evaluation if None
+        if out_dir is None:
+            # Find current folder
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            out_dir = os.path.join(current_dir, "test_results")
+
+        os.makedirs(out_dir, exist_ok=True)
         self.eval()
         self.swin_model.eval()
 
         all_labels = []
-        all_preds = []
+        all_scores = []
+        # Number of batches
+        num_batches = len(testing_loader)
 
         # 🔁 XLA_MOD – Load batches with parallel loader
-        val_loader = pl.MpDeviceLoader(val_loader, self.device)
+        val_loader = pl.MpDeviceLoader(testing_loader, self.device)
 
         with (torch.no_grad()):
             for images, labels in val_loader:
                 images = images.to(self.device)
                 labels = labels.to(self.device)
 
-                # Forward pass
-                outputs = self(images)
+                logits = self(images)
+                probs = torch.sigmoid(logits).cpu().numpy()
+                all_scores.append(probs)
+                all_labels.append(labels.cpu().numpy())
 
-                # Convert probabilities to binary predictions
-                outputs = torch.sigmoid(outputs)
-                predicted = (outputs > threshold).cpu().numpy()
-                labels = labels.cpu().numpy()
+                if len(all_labels) % 200 == 0:
+                    print("Step:", len(all_labels), "overall steps:", num_batches)
+                # Early exit for debugging
+                if len(all_labels) > 100:
+                    break
 
-                all_preds.append(predicted)
-                all_labels.append(labels)
+        y_true = np.vstack(all_labels)  # shape [N, C]
+        y_score = np.vstack(all_scores)  # shape [N, C]
+        y_pred = (y_score > threshold).astype(int)
 
-        # Concatenate all predictions and labels
-        all_preds = np.concatenate(all_preds, axis=0)
-        all_labels = np.concatenate(all_labels, axis=0)
-
-        # Calculate metrics
+        # Metriche di base
         metrics = {
-            "Exact Match Ratio (EMR)": accuracy_score(all_labels, all_preds), # % of images with ALL labels correct
-            "F1-score (macro)": f1_score(all_labels, all_preds, average="macro"),
-            "F1-score (weighted)": f1_score(all_labels, all_preds, average="weighted"),
-            "Precision (macro)": precision_score(all_labels, all_preds, average="macro", zero_division=0),
-            "Recall (macro)": recall_score(all_labels, all_preds, average="macro", zero_division=0),
-            "ROC AUC (macro)": roc_auc_score(all_labels, all_preds, average="macro"),
+            "Exact Match Ratio": accuracy_score(y_true, y_pred),
+            "F1_macro": f1_score(y_true, y_pred, average="macro", zero_division=0),
+            "F1_weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0),
+            "Precision_macro": precision_score(y_true, y_pred, average="macro", zero_division=0),
+            "Recall_macro": recall_score(y_true, y_pred, average="macro", zero_division=0),
         }
 
-        # Print metrics
-        for metric, value in metrics.items():
-            print(f"{metric}: {value:.4f}")
+        # ROC AUC e AUPRC per classe e media macro
+        n_classes = y_true.shape[1]
+        roc_aucs = []
+        pr_aps = []
+        # curve macro: concateniamo poi
+        all_fpr = np.unique(np.linspace(0, 1, 100))
+        mean_tpr = np.zeros_like(all_fpr)
+        mean_prec = np.zeros_like(all_fpr)  # riutilizziamo xp per PR
 
-        # Save metrics to file
+        for c in range(n_classes):
+            # ROC per classe
+            fpr, tpr, _ = roc_curve(y_true[:, c], y_score[:, c])
+            auc_c = roc_auc_score(y_true[:, c], y_score[:, c])
+            roc_aucs.append(auc_c)
+            # interp tpr su grid comune
+            mean_tpr += np.interp(all_fpr, fpr, tpr)
+
+            # PR per classe
+            prec, rec, _ = precision_recall_curve(y_true[:, c], y_score[:, c])
+            ap_c = average_precision_score(y_true[:, c], y_score[:, c])
+            pr_aps.append(ap_c)
+            # interp precision su stesso grid
+            mean_prec += np.interp(all_fpr, rec[::-1], prec[::-1])
+
+        # macro values
+        metrics["ROC_AUC_macro"] = np.mean(roc_aucs)
+        metrics["AUPRC_macro"] = np.mean(pr_aps)
+        metrics["ROC_AUC_per_class"] = roc_aucs
+        metrics["AUPRC_per_class"] = pr_aps
         if save_stats:
-            with open(SWIN_STATS_PATH, 'w') as file:
-                file.write(str(metrics))
-            print(f"Metrics saved to {SWIN_STATS_PATH}")
+            self._save_stats_improved(all_fpr, mean_prec, mean_tpr,
+                                      metrics, n_classes, out_dir)
+
+        # Stampa a video
+        for k, v in metrics.items():
+            # evita di stampare intere liste
+            if isinstance(v, list):
+                print(f"{k}: [see per-class values]")
+            else:
+                print(f"{k}: {v:.4f}")
 
         return metrics
+
+    def _per_label_roc_pr_delta(self, y_true: np.ndarray,
+                               y_score: np.ndarray,
+                               label_names: list[str]
+                               ) -> dict[str, dict[str, float]]:
+        """
+        Calcola per ogni etichetta (multilabel) ROC AUC, AUPRC e la loro differenza.
+
+        Args:
+            y_true (np.ndarray): array binario [N, C] delle vere etichette.
+            y_score (np.ndarray): array [N, C] delle probabilità previste.
+            label_names (list[str]): nomi delle C etichette, in ordine.
+
+        Returns:
+            dict: {
+               label_name: {
+                 "roc_auc": float,
+                 "auprc": float,
+                 "delta": float  # auprc - roc_auc
+               },
+               ...
+            }
+        """
+        assert y_true.shape == y_score.shape, "Shapes di y_true e y_score devono coincidere"
+        n_classes = y_true.shape[1]
+        assert len(label_names) == n_classes, "Numero di nomi etichette diverso da C"
+
+        results = {}
+        for i, name in enumerate(label_names):
+            # se la classe ha solo zeri o solo uni, roc_auc_score fallisce;
+            # in quel caso impostiamo a np.nan
+            try:
+                roc = roc_auc_score(y_true[:, i], y_score[:, i])
+            except ValueError:
+                roc = float("nan")
+            try:
+                pr = average_precision_score(y_true[:, i], y_score[:, i])
+            except ValueError:
+                pr = float("nan")
+
+            results[name] = {
+                "roc_auc": roc,
+                "auprc": pr,
+                "delta": pr - roc
+            }
+        return results
+
+    def _save_stats_improved(self, all_fpr, mean_prec, mean_tpr, metrics,
+                             n_classes, out_dir):
+        """
+        Save the evaluation statistics and plots.
+        Args:
+            all_fpr (np.ndarray): All false positive rates for ROC curve.
+            mean_prec (np.ndarray): Mean precision for PR curve.
+            mean_tpr (np.ndarray): Mean true positive rate for ROC curve.
+            metrics (dict): Dictionary of evaluation metrics.
+            n_classes (int): Number of classes.
+            out_dir (str): Output directory to save the plots and stats.
+        """
+        # Plot and Save ROC and PR curves
+
+        # ROC curve macro
+        mean_tpr /= n_classes
+        plt.figure()
+        plt.plot(all_fpr, mean_tpr, label=f"macro ROC (AUC={metrics['ROC_AUC_macro']:.3f})")
+        plt.plot([0, 1], [0, 1], linestyle="--")
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title("ROC Curve (macro)")
+        plt.legend()
+        roc_path = os.path.join(out_dir, "roc_macro.png")
+        plt.savefig(roc_path)
+        plt.close()
+
+        # Precision-Recall macro
+        mean_prec /= n_classes
+        plt.figure()
+        plt.plot(all_fpr, mean_prec, label=f"macro PR (AUPRC={metrics['AUPRC_macro']:.3f})")
+        plt.xlabel("Recall")
+        plt.ylabel("Precision")
+        plt.title("Precision-Recall Curve (macro)")
+        plt.legend()
+        pr_path = os.path.join(out_dir, "pr_macro.png")
+        plt.savefig(pr_path)
+        plt.close()
+
+        # Save in JSON
+        stats_path = os.path.join(out_dir, "metrics.json")
+        with open(stats_path, "w") as f:
+            json.dump(metrics, f, indent=2)
+        print(f"Saved metrics to {stats_path}")
+        print(f"Saved ROC plot to {roc_path}")
+        print(f"Saved PR plot to  {pr_path}")
 
     def save_model(self, path=SWIN_MODEL_SAVE_PATH):
         """
@@ -386,7 +552,7 @@ class SwinMIMICClassifier(nn.Module):
             raise FileNotFoundError(f"Model file not found: {path}")
 
         # Load the src state
-        self.swin_model.load_state_dict(
+        self.load_state_dict(
             torch.load(path,
                        map_location="cuda" if torch.cuda.is_available() else "cpu")
         )
@@ -416,36 +582,51 @@ if __name__ == "__main__":
 
     # Load Model if exists
     model_path = os.path.join(SAVE_DIR, "fine_tuned_model.pth")
+    model_state_path = os.path.join(SAVE_DIR, "finetuned_model_state.pth")
 
-    if not general.basic_menu_model_option(model_path, ft_model):
-        exit(0)
+    #if not general.basic_menu_model_option(model_path, ft_model):
+    #    exit(0)
 
-    # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
-    training_loader, valid_loader = general.get_dataloaders(
-        return_study_id=False, pin_memory=is_cuda,
-        use_bucket=True, verify_existence=False, full_data=True)
+    if os.path.exists(model_state_path):
+        print(f"[INFO] Found model state in {model_state_path}; Loading it...")
+        ft_model.load_model(model_state_path)
+        print("Model loaded.")
+    else:
 
-    # Train the model
-    print("Starting training...")
-    # NOTE: for other parameters, settings.py defines default values
-    #ft_model.train_model(training_loader)
+        print(f"[INFO] Model state not found in {model_state_path}; Training a new model...")
 
-    def _train_fn(rank, flags):
-        model = SwinMIMICClassifier(device=t_device).to(t_device)
-        model.train_model(flags['train_loader'], num_epochs=flags['num_epochs'])
+        # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
+        training_loader, valid_loader = general.get_dataloaders(
+            return_study_id=False, pin_memory=is_cuda,
+            use_bucket=True, verify_existence=False, full_data=True)
+
+        # Train the model
+        print("Starting training...")
+        # NOTE: for other parameters, settings.py defines default values
+        #ft_model.train_model(training_loader)
+
+        def _train_fn(rank, flags):
+            model = SwinMIMICClassifier(device=t_device).to(t_device)
+            model.train_model(flags['train_loader'], num_epochs=flags['num_epochs'])
 
 
-    xmp.spawn(_train_fn, args=({"train_loader": training_loader, "num_epochs": NUM_EPOCHS}),
-              nprocs=8, start_method='fork')
+        xmp.spawn(_train_fn, args=({"train_loader": training_loader, "num_epochs": NUM_EPOCHS}),
+                  nprocs=8, start_method='fork')
 
-    # Save the model
-    print("Saving model...")
-    ft_model.save_model(model_path)
-    print(f"Model saved to {model_path}")
+        # Save the model
+        print("Saving model...")
+        ft_model.save_model(model_path)
+        print(f"Model saved to {model_path}")
+
+    # Any case: Evaluate the model
+
+    print("Loading test dataset...")
+    test_loader = general.get_test_dataloader(pin_memory=is_cuda,use_bucket=True,
+                                              verify_existence=False, full_data=True)
 
     # Evaluate the model
     print("Starting evaluation...")
-    metrics_dict = ft_model.model_evaluation(valid_loader, save_stats=False)
+    metrics_dict = ft_model.model_evaluation(test_loader, save_stats=True, )
     print("Evaluation completed.")
     print("Metrics:", metrics_dict)
 

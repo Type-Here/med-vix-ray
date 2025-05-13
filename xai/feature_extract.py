@@ -278,12 +278,14 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
         is_inference (bool): If True, return detected signs per sample.
 
     Returns:
-        dict: The updated graph.
+        tuple: Updated graph and a dictionary of found signs (if is_inference=True, otherwise None).
     """
     stats_keys = stats_keys or ["intensity", "variance", "entropy", "active_dim",
                                 "skewness", "kurtosis", "fractal", "position"]
 
-    signs_found = {}
+    # Initialize signs_found with empty lists for all batch indices
+    batch_size = len(extracted_features)
+    signs_found = {i: [] for i in range(batch_size)}
 
     sign_vecs = []  # List to store sign vectors
     sign_ids = []  # List to store sign IDs
@@ -332,9 +334,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
                     "stats": __from_tensor_to_dict(feature_tensor, stats_keys)
                 })
 
-    if is_inference:
-        return graph, signs_found
-    return graph
+    return graph, signs_found
 
 def __from_tensor_to_dict(tensor, keys):
     """

@@ -66,7 +66,7 @@ def pil_cloud_open(path):
 
 
 # Function to resize while maintaining aspect ratio and add padding
-def preprocess_image(image, channels_mode="L", image_size=(256, 256), view_position='AP'):
+def preprocess_image(image, channels_mode="RGB", image_size=(256, 256), view_position='AP'):
     """
     Preprocess the image by resizing it while maintaining the aspect ratio and adding padding.
     The View Position is  'AP' or 'PA' for Anterior-Posterior or Posterior-Anterior projection.
@@ -98,7 +98,7 @@ def preprocess_image(image, channels_mode="L", image_size=(256, 256), view_posit
         mean = 0.5
         std = 0.5
     else:
-        color = (255, 255, 255)
+        color = (0, 0, 0)
         mean = [0.5, 0.5, 0.5]
         std = [0.5, 0.5, 0.5]
 
@@ -125,7 +125,7 @@ class ImagePreprocessor(Dataset):
         apply transformations and return the preprocessed images along with their labels.
 
         Parameters:
-            data_dict (list): List of dictionaries with all image paths and labels.
+            data_dict (dict): dictionary with all image paths and labels.
                 Each key should be an index containing a dict for each image.
                 Structure of dictionary:
                 {
@@ -143,7 +143,7 @@ class ImagePreprocessor(Dataset):
             tuple(torch.Tensor, torch.Tensor): Preprocessed image tensor; List of labels for the image.
     """
     def __init__(self, data_dict, transform = None, image_size=(256, 256),
-                 channels_mode="L", return_study_id=False, use_bucket=False):
+                 channels_mode="RGB", return_study_id=False, use_bucket=False):
         """
         Initialize the dataset with image paths, labels and transformations.
         `data_dict` structure:
@@ -158,7 +158,8 @@ class ImagePreprocessor(Dataset):
                 "view_position": view_position
             }
         Parameters:
-            data_dict (list): List of dictionaries with all image paths and labels.
+            data_dict (dict): dictionary with path, study_id, dicom_id, subject_id,
+                label and view_position for each image.
             transform (callable, optional): Optional transform to be applied on a sample (already opened image).
             image_size (tuple): Desired output size of the image.
             channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
