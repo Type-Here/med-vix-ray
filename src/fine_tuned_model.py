@@ -284,26 +284,29 @@ class SwinMIMICClassifier(nn.Module):
         # for param in self.swin_model.head.parameters():
         #    param.requires_grad = True
 
-    def model_evaluation(self,
-                         test_loader,
-                         threshold: float = 0.5,
-                         save_stats: bool = True,
-                         out_dir: str = "./evaluation"):
+    def model_evaluation(self, testing_loader, threshold: float = 0.5,
+                         save_stats: bool = True, out_dir: str = None):
         """
-        Evaluate the model on a dataloader, calcolare metriche multilabel e tracciare:
-          - Curve ROC (macro)
-          - Curve Precision-Recall (macro)
-        Salva sia i valori che i grafici.
+          Evaluate the model on a dataloader, calculate multilabel metrics, and plot:
+            - ROC curves (macro)
+            - Precision-Recall curves (macro)
+          Saves both the values and the plots.
 
-        Args:
-            test_loader (DataLoader): DataLoader per test/validazione.
-            threshold (float): soglia per binarizzare le predizioni.
-            save_stats (bool): se True salva metriche e grafici su disco.
-            out_dir (str): cartella in cui salvare i file.
+          Args:
+              testing_loader (DataLoader): DataLoader for testing/validation.
+              threshold (float): Threshold to binarize predictions.
+              save_stats (bool): If True, saves metrics and plots to disk.
+              out_dir (str): Directory to save the files.
 
-        Returns:
-            dict: tutte le metriche calcolate + paths dei grafici.
-        """
+          Returns:
+              dict: All calculated metrics + paths to the plots.
+          """
+        # Default to current folder + evaluation if None
+        if out_dir is None:
+            # Find current folder
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            out_dir = os.path.join(current_dir, "test_results")
+
         os.makedirs(out_dir, exist_ok=True)
         self.eval()
         self.swin_model.eval()
@@ -312,7 +315,7 @@ class SwinMIMICClassifier(nn.Module):
         all_scores = []
 
         with torch.no_grad():
-            for images, labels in test_loader:
+            for images, labels in testing_loader:
                 images = images.to(self.device)
                 labels = labels.to(self.device)
 
@@ -482,28 +485,41 @@ if __name__ == "__main__":
 
     # Load Model if exists
     model_path = os.path.join(SAVE_DIR, "fine_tuned_model.pth")
+    model_state_path = os.path.join(SAVE_DIR, "finetuned_model_state.pth")
 
-    if not general.basic_menu_model_option(model_path, ft_model):
-        exit(0)
+    #if not general.basic_menu_model_option(model_path, ft_model):
+    #    exit(0)
 
-    # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
-    training_loader, valid_loader = general.get_dataloaders(
-        return_study_id=False, pin_memory=is_cuda,
-        use_bucket=True, verify_existence=False, full_data=True)
+    if os.path.exists(model_state_path):
+        print(f"[INFO] Found model state in {model_state_path}; Loading it...")
+        ft_model.load_model(model_state_path)
+    else:
 
-    # Train the model
-    print("Starting training...")
-    # NOTE: for other parameters, settings.py defines default values
-    ft_model.train_model(training_loader)
+        print(f"[INFO] Model state not found in {model_state_path}; Training a new model...")
 
-    # Save the model
-    print("Saving model...")
-    ft_model.save_model(model_path)
-    print(f"Model saved to {model_path}")
+        # Fetches datasets, labels and create DataLoaders which will handle preprocessing images also.
+        training_loader, valid_loader = general.get_dataloaders(
+            return_study_id=False, pin_memory=is_cuda,
+            use_bucket=True, verify_existence=False, full_data=True)
+
+        # Train the model
+        print("Starting training...")
+        # NOTE: for other parameters, settings.py defines default values
+        ft_model.train_model(training_loader)
+
+        # Save the model
+        print("Saving model...")
+        ft_model.save_model(model_path)
+        print(f"Model saved to {model_path}")
+
+    # Any case: Evaluate the model
+
+    test_loader = general.get_test_dataloader(pin_memory=is_cuda,use_bucket=True,
+                                              verify_existence=False, full_data=True)
 
     # Evaluate the model
     print("Starting evaluation...")
-    metrics_dict = ft_model.model_evaluation(valid_loader, save_stats=False)
+    metrics_dict = ft_model.model_evaluation(test_loader, save_stats=True, )
     print("Evaluation completed.")
     print("Metrics:", metrics_dict)
 
