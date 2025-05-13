@@ -1,3 +1,5 @@
+import json
+
 import torch
 import timm
 import os
@@ -5,6 +7,7 @@ import torch.nn as nn
 import numpy as np
 import torchvision.transforms as transforms
 import torch.optim as optim
+from matplotlib import pyplot as plt
 
 from torchvision.datasets import ImageFolder
 from torch.utils.data import DataLoader
@@ -14,7 +17,8 @@ from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, SWIN_MODEL_DIR
 from settings import NUM_EPOCHS, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
 from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
 
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, roc_curve, \
+    precision_recall_curve, average_precision_score
 
 from src import general
 
@@ -280,63 +284,145 @@ class SwinMIMICClassifier(nn.Module):
         # for param in self.swin_model.head.parameters():
         #    param.requires_grad = True
 
-    def model_evaluation(self, val_loader, threshold=0.5, save_stats=True):
+    def model_evaluation(self,
+                         test_loader,
+                         threshold: float = 0.5,
+                         save_stats: bool = True,
+                         out_dir: str = "./evaluation"):
         """
-        Evaluate the src using scikit-learn metrics for multi-label classification.
+        Evaluate the model on a dataloader, calcolare metriche multilabel e tracciare:
+          - Curve ROC (macro)
+          - Curve Precision-Recall (macro)
+        Salva sia i valori che i grafici.
+
         Args:
-            val_loader: DataLoader for validation data.
-            threshold: Threshold for binary classification.
-            save_stats: If True, save the evaluation metrics to a file.
+            test_loader (DataLoader): DataLoader per test/validazione.
+            threshold (float): soglia per binarizzare le predizioni.
+            save_stats (bool): se True salva metriche e grafici su disco.
+            out_dir (str): cartella in cui salvare i file.
+
         Returns:
-            Dictionary with evaluation metrics.
+            dict: tutte le metriche calcolate + paths dei grafici.
         """
+        os.makedirs(out_dir, exist_ok=True)
         self.eval()
         self.swin_model.eval()
 
         all_labels = []
-        all_preds = []
+        all_scores = []
 
-        with (torch.no_grad()):
-            for images, labels in val_loader:
+        with torch.no_grad():
+            for images, labels in test_loader:
                 images = images.to(self.device)
                 labels = labels.to(self.device)
 
-                # Forward pass
-                outputs = self(images)
+                logits = self(images)
+                probs = torch.sigmoid(logits).cpu().numpy()
+                all_scores.append(probs)
+                all_labels.append(labels.cpu().numpy())
 
-                # Convert probabilities to binary predictions
-                outputs = torch.sigmoid(outputs)
-                predicted = (outputs > threshold).cpu().numpy()
-                labels = labels.cpu().numpy()
+        y_true = np.vstack(all_labels)  # shape [N, C]
+        y_score = np.vstack(all_scores)  # shape [N, C]
+        y_pred = (y_score > threshold).astype(int)
 
-                all_preds.append(predicted)
-                all_labels.append(labels)
-
-        # Concatenate all predictions and labels
-        all_preds = np.concatenate(all_preds, axis=0)
-        all_labels = np.concatenate(all_labels, axis=0)
-
-        # Calculate metrics
+        # Metriche di base
         metrics = {
-            "Exact Match Ratio (EMR)": accuracy_score(all_labels, all_preds), # % of images with ALL labels correct
-            "F1-score (macro)": f1_score(all_labels, all_preds, average="macro"),
-            "F1-score (weighted)": f1_score(all_labels, all_preds, average="weighted"),
-            "Precision (macro)": precision_score(all_labels, all_preds, average="macro", zero_division=0),
-            "Recall (macro)": recall_score(all_labels, all_preds, average="macro", zero_division=0),
-            "ROC AUC (macro)": roc_auc_score(all_labels, all_preds, average="macro"),
+            "Exact Match Ratio": accuracy_score(y_true, y_pred),
+            "F1_macro": f1_score(y_true, y_pred, average="macro", zero_division=0),
+            "F1_weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0),
+            "Precision_macro": precision_score(y_true, y_pred, average="macro", zero_division=0),
+            "Recall_macro": recall_score(y_true, y_pred, average="macro", zero_division=0),
         }
 
-        # Print metrics
-        for metric, value in metrics.items():
-            print(f"{metric}: {value:.4f}")
+        # ROC AUC e AUPRC per classe e media macro
+        n_classes = y_true.shape[1]
+        roc_aucs = []
+        pr_aps = []
+        # curve macro: concateniamo poi
+        all_fpr = np.unique(np.linspace(0, 1, 100))
+        mean_tpr = np.zeros_like(all_fpr)
+        mean_prec = np.zeros_like(all_fpr)  # riutilizziamo xp per PR
 
-        # Save metrics to file
+        for c in range(n_classes):
+            # ROC per classe
+            fpr, tpr, _ = roc_curve(y_true[:, c], y_score[:, c])
+            auc_c = roc_auc_score(y_true[:, c], y_score[:, c])
+            roc_aucs.append(auc_c)
+            # interp tpr su grid comune
+            mean_tpr += np.interp(all_fpr, fpr, tpr)
+
+            # PR per classe
+            prec, rec, _ = precision_recall_curve(y_true[:, c], y_score[:, c])
+            ap_c = average_precision_score(y_true[:, c], y_score[:, c])
+            pr_aps.append(ap_c)
+            # interp precision su stesso grid
+            mean_prec += np.interp(all_fpr, rec[::-1], prec[::-1])
+
+        # macro values
+        metrics["ROC_AUC_macro"] = np.mean(roc_aucs)
+        metrics["AUPRC_macro"] = np.mean(pr_aps)
+        metrics["ROC_AUC_per_class"] = roc_aucs
+        metrics["AUPRC_per_class"] = pr_aps
         if save_stats:
-            with open(SWIN_STATS_PATH, 'w') as file:
-                file.write(str(metrics))
-            print(f"Metrics saved to {SWIN_STATS_PATH}")
+            self.save_stats_improved(all_fpr, mean_prec, mean_tpr,
+                                     metrics, n_classes, out_dir)
+
+        # Stampa a video
+        for k, v in metrics.items():
+            # evita di stampare intere liste
+            if isinstance(v, list):
+                print(f"{k}: [see per-class values]")
+            else:
+                print(f"{k}: {v:.4f}")
 
         return metrics
+
+    def save_stats_improved(self, all_fpr, mean_prec, mean_tpr, metrics,
+                            n_classes, out_dir):
+        """
+        Save the evaluation statistics and plots.
+        Args:
+            all_fpr (np.ndarray): All false positive rates for ROC curve.
+            mean_prec (np.ndarray): Mean precision for PR curve.
+            mean_tpr (np.ndarray): Mean true positive rate for ROC curve.
+            metrics (dict): Dictionary of evaluation metrics.
+            n_classes (int): Number of classes.
+            out_dir (str): Output directory to save the plots and stats.
+        """
+        # Plot and Save ROC and PR curves
+
+        # ROC curve macro
+        mean_tpr /= n_classes
+        plt.figure()
+        plt.plot(all_fpr, mean_tpr, label=f"macro ROC (AUC={metrics['ROC_AUC_macro']:.3f})")
+        plt.plot([0, 1], [0, 1], linestyle="--")
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.title("ROC Curve (macro)")
+        plt.legend()
+        roc_path = os.path.join(out_dir, "roc_macro.png")
+        plt.savefig(roc_path)
+        plt.close()
+
+        # Precision-Recall macro
+        mean_prec /= n_classes
+        plt.figure()
+        plt.plot(all_fpr, mean_prec, label=f"macro PR (AUPRC={metrics['AUPRC_macro']:.3f})")
+        plt.xlabel("Recall")
+        plt.ylabel("Precision")
+        plt.title("Precision-Recall Curve (macro)")
+        plt.legend()
+        pr_path = os.path.join(out_dir, "pr_macro.png")
+        plt.savefig(pr_path)
+        plt.close()
+
+        # Save in JSON
+        stats_path = os.path.join(out_dir, "metrics.json")
+        with open(stats_path, "w") as f:
+            json.dump(metrics, f, indent=2)
+        print(f"Saved metrics to {stats_path}")
+        print(f"Saved ROC plot to {roc_path}")
+        print(f"Saved PR plot to  {pr_path}")
 
     def save_model(self, path=SWIN_MODEL_SAVE_PATH):
         """
