@@ -931,10 +931,14 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                     val_labels.append(labels_val.cpu().numpy())
                     val_preds.append((preds > 0.5).astype(int))
 
-                val_accuracy = accuracy_score(val_labels, val_preds)
-                val_f1 = f1_score(val_labels, val_preds, average='macro')
+            # Concatenate all labels and predictions
+            val_labels_concat = np.concatenate(val_labels,axis=0)
+            val_preds_concat = np.concatenate(val_preds,axis=0)
 
-                print(f"[VAL] Epoch {epoch + 1} - Accuracy: {val_accuracy:.4f}, F1 Score: {val_f1:.4f}")
+            val_accuracy = accuracy_score(val_labels_concat, val_preds_concat)
+            val_f1 = f1_score(val_labels_concat, val_preds_concat, average='macro')
+
+            print(f"[VAL] Epoch {epoch + 1} - Accuracy: {val_accuracy:.4f}, F1 Score: {val_f1:.4f}")
 
             val_loss_epoch = val_running_loss / val_count
             print(f"[VAL] Epoch {epoch + 1} - Validation Loss: {val_loss_epoch:.4f}")
