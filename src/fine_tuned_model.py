@@ -58,7 +58,22 @@ def vit_loader():
 
 
 # ================================================ MIMIC SWIN CLASSIFIER ===============================================
+def _swin_loader_rgb(evaluation: bool=False, num_classes: int=0) -> nn.Module:
+    """
+    Carica SwinV2 pretrained ms_in1k, senza toccare patch_embed
+    e senza classifier head (num_classes=0 + head=Identity).
+    """
+    model = timm.create_model(
+        "swinv2_base_window8_256.ms_in1k",
+        pretrained=True,
+        num_classes=num_classes,
+    )
 
+    # Remove final classifier to extract features
+    model.head = nn.Identity() # Identity() removes the classifier head by replacing it with an identity function
+    if evaluation:
+        model.eval()
+    return model
 
 def _swin_loader(evaluation=False, num_classes=14) -> nn.Module:
     """
@@ -99,6 +114,9 @@ def _swin_loader(evaluation=False, num_classes=14) -> nn.Module:
     # Copy the weights from the original conv layer, averaging across channels
     new_conv1.weight.data = conv1.weight.mean(dim=1, keepdim=True)
 
+    # Copy the bias if it exists
+    new_conv1.bias.data = conv1.bias.data
+
     # Replace the first conv layer in the src
     model.patch_embed.proj = new_conv1
 
@@ -137,7 +155,7 @@ class SwinMIMICClassifier(nn.Module):
             :param num_classes: Number of output classes (default: 14 for MIMIC-CXR).
         """
         super(SwinMIMICClassifier, self).__init__()
-        self.swin_model = _swin_loader(num_classes=num_classes)
+        self.swin_model = _swin_loader_rgb(num_classes=num_classes)
 
         # New classifier head
         self.classifier = nn.Sequential(
@@ -383,8 +401,8 @@ class SwinMIMICClassifier(nn.Module):
         metrics["ROC_AUC_per_class"] = roc_aucs
         metrics["AUPRC_per_class"] = pr_aps
         if save_stats:
-            self.save_stats_improved(all_fpr, mean_prec, mean_tpr,
-                                     metrics, n_classes, out_dir)
+            self._save_stats_improved(all_fpr, mean_prec, mean_tpr,
+                                      metrics, n_classes, out_dir)
 
         # Stampa a video
         for k, v in metrics.items():
@@ -396,8 +414,54 @@ class SwinMIMICClassifier(nn.Module):
 
         return metrics
 
-    def save_stats_improved(self, all_fpr, mean_prec, mean_tpr, metrics,
-                            n_classes, out_dir):
+    def _per_label_roc_pr_delta(self, y_true: np.ndarray,
+                               y_score: np.ndarray,
+                               label_names: list[str]
+                               ) -> dict[str, dict[str, float]]:
+        """
+        Calcola per ogni etichetta (multilabel) ROC AUC, AUPRC e la loro differenza.
+
+        Args:
+            y_true (np.ndarray): array binario [N, C] delle vere etichette.
+            y_score (np.ndarray): array [N, C] delle probabilità previste.
+            label_names (list[str]): nomi delle C etichette, in ordine.
+
+        Returns:
+            dict: {
+               label_name: {
+                 "roc_auc": float,
+                 "auprc": float,
+                 "delta": float  # auprc - roc_auc
+               },
+               ...
+            }
+        """
+        assert y_true.shape == y_score.shape, "Shapes di y_true e y_score devono coincidere"
+        n_classes = y_true.shape[1]
+        assert len(label_names) == n_classes, "Numero di nomi etichette diverso da C"
+
+        results = {}
+        for i, name in enumerate(label_names):
+            # se la classe ha solo zeri o solo uni, roc_auc_score fallisce;
+            # in quel caso impostiamo a np.nan
+            try:
+                roc = roc_auc_score(y_true[:, i], y_score[:, i])
+            except ValueError:
+                roc = float("nan")
+            try:
+                pr = average_precision_score(y_true[:, i], y_score[:, i])
+            except ValueError:
+                pr = float("nan")
+
+            results[name] = {
+                "roc_auc": roc,
+                "auprc": pr,
+                "delta": pr - roc
+            }
+        return results
+
+    def _save_stats_improved(self, all_fpr, mean_prec, mean_tpr, metrics,
+                             n_classes, out_dir):
         """
         Save the evaluation statistics and plots.
         Args:
