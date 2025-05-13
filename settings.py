@@ -91,6 +91,9 @@ NUM_WORKERS = 8 # Number of parallel workers for processing (Threads)
 NUM_EPOCHS = 10
 LEARNING_RATE_TRANSFORMER = 1e-5 # For Transformer Blocks
 LEARNING_RATE_CLASSIFIER = 1e-4 # For Classifier Head
+LEARNING_RATE_INPUT_LAYER = 1e-6 # For Input Layer
+# If the learning rate is too high, the model may not converge or may diverge.
+
 BATCH_SIZE = 16
 
 # Early Stopping

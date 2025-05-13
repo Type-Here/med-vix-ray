@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 #sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Dataset path
-from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, SWIN_MODEL_DIR
+from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, SWIN_MODEL_DIR, LEARNING_RATE_INPUT_LAYER
 from settings import NUM_EPOCHS, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
 from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
 
@@ -206,6 +206,7 @@ class SwinMIMICClassifier(nn.Module):
     def train_model(self, train_loader, num_epochs=NUM_EPOCHS,
                     learning_rate_swin=LEARNING_RATE_TRANSFORMER,
                     learning_rate_classifier=LEARNING_RATE_CLASSIFIER,
+                    learning_rate_input_layer=LEARNING_RATE_INPUT_LAYER,
                     layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None,
                     loss_fn_param= nn.BCEWithLogitsLoss()):
         """
@@ -221,6 +222,7 @@ class SwinMIMICClassifier(nn.Module):
             num_epochs (int): Number of epochs to train the src.
             learning_rate_classifier (float): Learning rate for the classifier head.
             learning_rate_swin (float): Learning rate for the Swin Transformer layers.
+            learning_rate_input_layer (float): Learning rate for the input layer. (conv + norm)
             optimizer_param (torch.optim.Optimizer): Optimizer for training. Default: None -> optim.Adam will be used.
             loss_fn_param (torch.nn.Module): Loss function for training.
                 Default: nn.BCEWithLogitsLoss() since mix sigmoid and BCE, recommended for multi-label classification.
@@ -233,7 +235,8 @@ class SwinMIMICClassifier(nn.Module):
         for name, param in self.swin_model.named_parameters():
             print(f"{name}: requires_grad = {param.requires_grad}")
 
-        optimizer = self._create_optimizer(layers_to_unblock, learning_rate_classifier, learning_rate_swin,
+        optimizer = self._create_optimizer(layers_to_unblock, learning_rate_classifier,
+                                           learning_rate_swin, learning_rate_input_layer,
                                            optimizer_param)
 
         # Binary Cross-Entropy for multi-label classification
@@ -275,14 +278,17 @@ class SwinMIMICClassifier(nn.Module):
 
 
 
-    def _create_optimizer(self, layers_to_unblock, learning_rate_classifier, learning_rate_swin, optimizer_param):
+    def _create_optimizer(self, layers_to_unblock, learning_rate_classifier,
+                          learning_rate_swin, learning_rate_input_layer, optimizer_param):
         # Define two parameter groups with different learning rates
         # Group 1: Swin Transformer layers
         # Group 2: Classifier head
         if optimizer_param is None:
             optimizer = optim.Adam([
                 {"params": self.swin_model.patch_embed.proj.parameters(),
-                 "lr": learning_rate_classifier},  # Same LR as transformer layers
+                 "lr": learning_rate_input_layer},
+                {"params": self.swin_model.patch_embed.norm.parameters(),
+                 "lr": learning_rate_input_layer},
                 {"params": self.swin_model.layers[-layers_to_unblock:].parameters(),
                  "lr": learning_rate_swin},  # Lower LR for Swin Transformer
                 {"params": self.classifier.parameters(),
@@ -299,6 +305,9 @@ class SwinMIMICClassifier(nn.Module):
         # Unfreeze the input layer since it was changed to accept grayscale input
         for param in self.swin_model.patch_embed.proj.parameters():
             param.requires_grad = True
+        # Unfreeze the normalization layer
+        for p in self.swin_model.patch_embed.norm.parameters():
+            p.requires_grad = True
         # Unfreeze the last layers_to_unblock transformer blocks # Default: 2
         for layer in list(self.swin_model.layers)[-layers_to_unblock:]:
             # print(f"Unblocking layer: {layer}")
