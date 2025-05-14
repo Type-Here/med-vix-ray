@@ -828,7 +828,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             if num_epochs <= 0:
                 print("[WARNING] - No epochs left to train!")
-                return
+                exit(1)
 
             print(f"[INFO]: Found already partially trained model."
                   f" - Restarting training from epoch {self.current_epoch + 1}."
