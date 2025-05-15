@@ -931,15 +931,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # - 2. Attention-focus loss: push the map to have
         # high similarity towards clinical signs
-        focus_losses = []
-        for i in range(bat):
-            sims = [r["similarity"] for r in signs_found[i]]
-            if len(sims) == 0:
-                focus_losses.append(torch.tensor(0.0, device=self.device))
-            else:
-                mean_sim = torch.tensor(sims, device=self.device).mean()
-                focus_losses.append(1.0 - mean_sim)
-        loss_focus = torch.stack(focus_losses).mean()
+        focus_total = sum((1.0 - torch.tensor(sims, device=self.device).mean()) if sims else 0.0 for sims in
+                          ([r["similarity"] for r in signs_found[i]] for i in range(bat)))
+        loss_focus = focus_total / bat
 
         # --- 3. Nudger KL divergence loss ---
         probs_adj = torch.sigmoid(adjusted_logits)
@@ -947,7 +941,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         probs_adj = torch.clamp(probs_adj, 1e-6, 1.0)
         probs_base = torch.clamp(probs_base, 1e-6, 1.0)
 
-        loss_kl = fc.kl_div(probs_adj.log(), probs_base, reduction='batchmean')
+        # KL(input || target), where input is log_probs, target is probs
+        loss_kl = fc.kl_div(probs_adj.log(), probs_base, reduction='batchmean') # TODO Check direction of KL divergence
 
         # --- 4. Combine ---
         total_loss = loss_class + lambda_sim * loss_focus + lambda_kl * loss_kl
