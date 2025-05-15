@@ -132,7 +132,8 @@ NEGATIVE_WEIGHT_FINDING = -0.2 # Weight for negative samples
 ALPHA_GRAPH = 0.2 # Alpha correction factor for the graph attention mechanism Initial value (Learnable)
 
 # LOSS FROM GRAPH
-LAMBDA_REG=0.05 # Regularization parameter for the loss function
+LAMBDA_SIM=0.4 # Regularization parameter for the loss function # Similarity loss
+LAMBDA_KL=0.2 # KL divergence parameter for the loss function
 
 # ETA FOR GRAPH NUDGER MODULE LEARNING RATE
 ETA_GRAPH = 0.1 # Learning rate for the graph nudger module
