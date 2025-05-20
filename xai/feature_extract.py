@@ -266,6 +266,13 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
                                          update_features=True, is_inference=False):
     """
     Updates the graph nodes (type="sign") with feature statistics from matched regions.
+    Structure of signs_found is:
+        - signs_found = {i: [] for i in range(batch_size)}
+        - signs_found[i] = { "id": sign_id,
+                             "similarity": similarity_score,
+                             "label": sign_label,
+                             "stats": { "intensity": value, ... }
+                           }
 
     Args:
         graph (dict): Graph JSON containing "nodes".
@@ -350,7 +357,7 @@ def __from_tensor_to_dict(tensor, keys):
         if key == "position":
             pos_start = len(keys) - 1  # last is 'position'
             dict_result["position"] = tensor[pos_start:].tolist()
-            #dict_result[key] = tensor[-4:].tolist()
+            # dict_result[key] = tensor[-4:].tolist()
         else:
             dict_result[key] = tensor[i].item()
     return dict_result

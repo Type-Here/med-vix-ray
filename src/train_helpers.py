@@ -1,5 +1,6 @@
 import torch
 from torch import optim
+from torchvision.ops import sigmoid_focal_loss
 
 
 class EarlyStopperMin:
@@ -151,6 +152,23 @@ class EarlyStopper:
 
         return False
 
+# ================================== LOSS FUNCTION ================================== #
+
+
+def focal_loss(logits, targets, alpha=0.25, gamma=2.0):
+    """
+        Focal loss function for classification tasks.
+        Args:
+            logits (torch.Tensor): Predicted logits from the model.
+            targets (torch.Tensor): Ground truth labels.
+            alpha (float): Weighting factor for the positive class.
+            gamma (float): Focusing parameter to adjust the rate at which easy examples are down-weighted.
+        Returns:
+            torch.Tensor: Computed focal loss.
+    """
+    return sigmoid_focal_loss(logits, targets, alpha=alpha, gamma=gamma, reduction="mean")
+
+# ================================== LEARNING RATE SCHEDULER ================================== #
 
 class CustomLRScheduler:
     """
@@ -281,6 +299,9 @@ def create_optimizer(model, layers_to_unblock, learning_rate_classifier, learnin
     optimizer = optim.AdamW([
         {"params": filter_new(model.swin_model.patch_embed.parameters()),
          "lr": learning_rate_input},
+
+        {"params": filter_new(model.swin_model.patch_embed.norm.parameters()),
+        "lr": learning_rate_input},
 
         {"params": filter_new(model.classifier.parameters()),
          "lr": learning_rate_classifier},

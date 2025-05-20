@@ -1,4 +1,11 @@
-import os
+import os, json
+
+service_account_var = os.environ.get('SERVICE_ACCOUNT_TOKEN')
+if service_account_var and service_account_var[0] == "'":  # If the first character is a single quote, remove it
+    service_account_var = service_account_var[1:]
+    service_account_var = service_account_var[:-1]  # Remove the last character (single quote)
+service_account = json.loads(service_account_var)
+print(f"---- Service Account Domain: {service_account['universe_domain']}")
 
 # Radlex Ontology
 RADLEX_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ontology', 'data')
@@ -40,6 +47,7 @@ except (AttributeError, KeyError):
 
 SERVICE_ACCOUNT_TOKEN =  None # Service account token for GCP
 # os.environ.get('SERVICE_ACCOUNT_TOKEN', None)
+# SERVICE_ACCOUNT_TOKEN = service_account # Service account token for GCP if using json token
 
 # ================================
 
@@ -91,6 +99,9 @@ NUM_WORKERS = 8 # Number of parallel workers for processing (Threads)
 NUM_EPOCHS = 10
 LEARNING_RATE_TRANSFORMER = 1e-5 # For Transformer Blocks
 LEARNING_RATE_CLASSIFIER = 1e-4 # For Classifier Head
+LEARNING_RATE_INPUT_LAYER = 1e-6 # For Input Layer
+# If the learning rate is too high, the model may not converge or may diverge.
+
 BATCH_SIZE = 128
 
 # Early Stopping
@@ -129,7 +140,8 @@ NEGATIVE_WEIGHT_FINDING = -0.2 # Weight for negative samples
 ALPHA_GRAPH = 0.2 # Alpha correction factor for the graph attention mechanism Initial value (Learnable)
 
 # LOSS FROM GRAPH
-LAMBDA_REG=0.05 # Regularization parameter for the loss function
+LAMBDA_SIM=0.4 # Regularization parameter for the loss function # Similarity loss
+LAMBDA_KL=0.2 # KL divergence parameter for the loss function
 
 # ETA FOR GRAPH NUDGER MODULE LEARNING RATE
 ETA_GRAPH = 0.1 # Learning rate for the graph nudger module

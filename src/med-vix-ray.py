@@ -4,6 +4,7 @@ import os
 import torch.nn as nn
 import numpy as np
 from sklearn.metrics import accuracy_score, f1_score
+import torch.nn.functional as fc
 
 # XLA_MOD
 import torch_xla
@@ -17,15 +18,16 @@ from torch_xla.runtime import global_ordinal
 
 import src.train_helpers
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
-    MODELS_DIR, LAMBDA_REG, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, \
-    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH, INJECT_BIAS_FROM_THIS_LAYER, EARLY_STOPPING_PATIENCE
+    MODELS_DIR, LAMBDA_SIM, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, \
+    MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH, INJECT_BIAS_FROM_THIS_LAYER, EARLY_STOPPING_PATIENCE, \
+    LEARNING_RATE_INPUT_LAYER, LAMBDA_KL
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
 
 import xai.attention_map as attention
 import xai.feature_extract as xai_fe
 import xai.edges_stats_update as update_edges
-from src.train_helpers import CustomLRScheduler, EarlyStopper
+from src.train_helpers import CustomLRScheduler, EarlyStopper, focal_loss
 
 
 def _compute_batch_features_vectors(features_dict, keys_order=None):
@@ -486,6 +488,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         super(SwinMIMICGraphClassifier, self).__init__(num_classes=num_classes)
 
         # Flag for inference mode
+        self.signs_found = None
         self.is_inference = False
 
         # Set create optimizer to custom function
@@ -703,6 +706,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             Set the flag accordingly in the training loop.
         """
         self.classifier_grad = None  # Reset the classifier gradient for each forward pass.
+        self.signs_found = None  # Reset the signs found for each forward pass.
 
         # 1b. Else, if graph guidance is active, use graph
         if use_graph_guidance and not self.is_graph_used:
@@ -736,6 +740,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             update_features=self.training,
             is_inference=self.is_inference or use_graph_guidance
         )
+
+        self.signs_found = signs_found
 
         # 1a. If graph guidance is not active return the classifier logits directly.
         if not use_graph_guidance:
@@ -779,8 +785,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
     def train_model(self, train_loader, num_epochs=NUM_EPOCHS,
                     learning_rate_swin=LEARNING_RATE_TRANSFORMER,
                     learning_rate_classifier=LEARNING_RATE_CLASSIFIER,
-                    layers_to_unblock=UNBLOCKED_LEVELS, optimizer_param=None,
-                    loss_fn_param=nn.BCEWithLogitsLoss(), lambda_reg=LAMBDA_REG,
+                    learning_rate_input=LEARNING_RATE_INPUT_LAYER,
+                    layers_to_unblock=UNBLOCKED_LEVELS,
+                    loss_fn_param=focal_loss,
+                    optimizer_param=None,
+                    lambda_sim=LAMBDA_SIM,
+                    lambda_kl=LAMBDA_KL,
                     patience=EARLY_STOPPING_PATIENCE, use_validation=True,
                     validation_loader=None):
         """
@@ -798,10 +808,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             num_epochs (int): Number of epochs to train.
             learning_rate_swin (float): Learning rate for the transformer blocks.
             learning_rate_classifier (float): Learning rate for the classifier head.
+            learning_rate_input (float): Learning rate for the input layer.
             layers_to_unblock (int): Number of layers to unblock in the Swin Transformer.
             optimizer_param (torch.optim.Optimizer, optional): Optimizer for training. If None, defaults to AdamW.
             loss_fn_param (callable, optional): Loss function. If None, defaults to BCEWithLogitsLoss.
-            lambda_reg (float): Regularization parameter for the graph bias term.
+            lambda_sim (float): Regularization parameter for similarity loss.
+            lambda_kl (float): Regularization parameter for KL divergence loss.
             patience (int): Number of epochs for early stopping.
             use_validation (bool): Whether to use validation data for early stopping.
             validation_loader (DataLoader, optional): DataLoader for the validation dataset.
@@ -814,8 +826,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self._unblock_layers(layers_to_unblock)
 
         # Define optimizer with parameter groups.
-        optimizer = self._create_optimizer(self, layers_to_unblock, learning_rate_swin,
-                                           learning_rate_classifier, optimizer_param)
+        optimizer = self._create_optimizer(self, layers_to_unblock,
+                                           learning_rate_input=learning_rate_input,
+                                           learning_rate_swin=learning_rate_swin,
+                                           learning_rate_classifier=learning_rate_classifier,
+                                           optimizer_param=optimizer_param)
 
         # Attach Custom LR Scheduler
         self._lr_scheduler = CustomLRScheduler(optimizer)
@@ -830,7 +845,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             if num_epochs <= 0:
                 print("[WARNING] - No epochs left to train!")
-                return
+                exit(1)
 
             print(f"[INFO]: Found already partially trained model."
                   f" - Restarting training from epoch {self.current_epoch + 1}."
@@ -871,28 +886,23 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 # This forward pass should update self.base_logits.
                 adjusted_logits = self.forward(images, use_graph_guidance=is_graph_active)
 
-                # Classification loss computed on the adjusted logits.
-                loss_class = loss_fn(adjusted_logits, labels)
-
-                # Compute additional regularization loss only if graph guidance is active.
-                if is_graph_active:
-                    graph_bias = adjusted_logits - self.classifier_logits  # shape: [B, num_classes]
-                    loss_reg = lambda_reg * torch.mean(graph_bias ** 2)
-                else:
-                    loss_reg = 0.0
-
-                loss_total = loss_class + loss_reg
+                loss_total, _ = self.compute_total_loss(adjusted_logits, labels, self.signs_found,
+                                                        lambda_sim=lambda_sim, lambda_kl=lambda_kl,
+                                                        loss_fn_class=loss_fn)
                 loss_total.backward()
 
                 # XLA_MOD
                 xm.optimizer_step(optimizer)
 
-                for i, study_id in enumerate(study_ids):
-                    # Update the graph with the new weights.
-                    # This function updates the weights of the edges in the graph based on the classifier logits.
-                    self.graph_attention_module.update_edge_weights_with_ground_truth(
-                        self.graph, study_id, labels[i].detach().cpu().numpy()
-                    )
+                # Update of the graph weights is done with ground truth labels
+                # This is done only for the first two epochs to avoid useless updates
+                if self.current_epoch < 2:
+                    for i, study_id in enumerate(study_ids):
+                        # Update the graph with the new weights.
+                        # This function updates the weights of the edges in the graph based on the classifier logits.
+                        self.graph_attention_module.update_edge_weights_with_ground_truth(
+                            self.graph, study_id, labels[i].cpu().numpy()
+                        )
 
                 running_loss += loss_total.detach().item()
 
@@ -903,7 +913,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             print(f"[TRAIN] Epoch {epoch + 1}/{num_epochs}, Loss: {running_loss / count:.4f}")
 
             # Validation step for early stopping verification and lr scheduler step.
-            if use_validation and self._validate_in_training(loss_fn, epoch, validation_loader=validation_loader):
+            if (use_validation and self._validate_in_training(loss_fn, epoch,
+                                            validation_loader=validation_loader)):
                 break
 
             # Save model each epoch; xm.get_ordinal() == 0: only save on the first device.
@@ -912,6 +923,53 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # Set the model back to evaluation mode.
         self.eval()
+
+    def compute_total_loss(self, adjusted_logits, labels, signs_found,
+                           loss_fn_class, lambda_sim=0.5, lambda_kl=0.2) -> tuple[torch.Tensor, dict]:
+        """
+        Compute total loss for graph-augmented Swin training.
+        self.classifier_logits: Logits before nudging [B, C]
+
+        Args:
+            adjusted_logits: Final logits [B, C]
+            labels: Ground truth labels [B, C]
+            signs_found: List of dicts with similarity info per sample
+            loss_fn_class: BCE or focal loss
+            lambda_sim: Weight for attention-based loss
+            lambda_kl: Weight for nudging KL loss
+
+        Returns:
+            total_loss: Total loss value
+            loss_dict: Dictionary with individual loss components
+        """
+        bat, _ = labels.shape
+
+        # --- 1. Classification loss (Focal/BCE) ---
+        loss_class = loss_fn_class(adjusted_logits, labels)
+
+        # - 2. Attention-focus loss: push the map to have
+        # high similarity towards clinical signs
+        focus_total = sum((1.0 - torch.tensor(sims, device=self.device).mean()) if sims else 0.0 for sims in
+                          ([r["similarity"] for r in signs_found[i]] for i in range(bat)))
+        loss_focus = focus_total / bat
+
+        # --- 3. Nudger KL divergence loss ---
+        probs_adj = torch.sigmoid(adjusted_logits)
+        probs_base = torch.sigmoid(self.classifier_logits)
+        probs_adj = torch.clamp(probs_adj, 1e-6, 1.0)
+        probs_base = torch.clamp(probs_base, 1e-6, 1.0)
+
+        # KL(input || target), where input is log_probs, target is probs
+        loss_kl = fc.kl_div(probs_adj.log(), probs_base, reduction='batchmean') # TODO Check direction of KL divergence
+
+        # --- 4. Combine ---
+        total_loss = loss_class + lambda_sim * loss_focus + lambda_kl * loss_kl
+        return total_loss, {
+            "loss_class": loss_class.item(),
+            "loss_attention": loss_focus.item(),
+            "loss_kl": loss_kl.item(),
+            "total_loss": total_loss.item()
+        }
 
     def _validate_in_training(self, loss_fn, epoch, validation_loader=None):
         # --- Validation step ---
