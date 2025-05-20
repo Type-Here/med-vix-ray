@@ -1,4 +1,11 @@
-import os
+import os, json
+
+service_account_var = os.environ.get('SERVICE_ACCOUNT_TOKEN')
+if service_account_var and service_account_var[0] == "'":  # If the first character is a single quote, remove it
+    service_account_var = service_account_var[1:]
+    service_account_var = service_account_var[:-1]  # Remove the last character (single quote)
+service_account = json.loads(service_account_var)
+print(f"---- Service Account Domain: {service_account['universe_domain']}")
 
 # Radlex Ontology
 RADLEX_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ontology', 'data')
@@ -40,6 +47,7 @@ except (AttributeError, KeyError):
 
 SERVICE_ACCOUNT_TOKEN =  None # Service account token for GCP
 # os.environ.get('SERVICE_ACCOUNT_TOKEN', None)
+# SERVICE_ACCOUNT_TOKEN = service_account # Service account token for GCP if using json token
 
 # ================================
 
