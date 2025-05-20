@@ -948,7 +948,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         total_loss = loss_class + lambda_sim * loss_focus + lambda_kl * loss_kl
         return total_loss, {
             "loss_class": loss_class.item(),
-            "loss_attention": loss_focus.item(),
+            "loss_attention": loss_focus,
             "loss_kl": loss_kl.item(),
             "total_loss": total_loss.item()
         }
