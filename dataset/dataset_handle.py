@@ -17,6 +17,7 @@ _DATA_CACHE = {}
     Manage also the labels and metadata and partial list of images.
 """
 
+
 def __save_split_datasets(directory, train_data, validation_data, test_data, full_data=False):
     """
     Save the split datasets to the specified directory.

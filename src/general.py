@@ -56,7 +56,7 @@ def basic_menu_model_option(model_path, model_obj):
 
 def get_dataloaders(return_study_id=False, pin_memory=False,
                     return_train_loader=True, return_val_loader=True,
-                    full_data=False, verify_existence=False, use_bucket=False):
+                    full_data=False, verify_existence=False, use_bucket=False, channels_mode="RGB"):
     """
         Get the training and validation dataloaders.
 
@@ -89,6 +89,8 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
 
             verify_existence (bool): If True, the function will check if the image paths
             exist while fetching paths from csv. (Only for non bucketed dataset)
+            
+            channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
 
         Returns:
             tuple[DataLoader, DataLoader] for training and validation datasets.
@@ -119,7 +121,7 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
         print(" - Creating training dataloader...")
         training_loader = DataLoader(ImagePreprocessor
                                      (train_metadata,
-                                      channels_mode="L",
+                                      channels_mode=channels_mode,
                                       return_study_id=return_study_id,
                                       use_bucket=use_bucket),
                                  batch_size=BATCH_SIZE, shuffle=True,
@@ -140,7 +142,7 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
         print(" - Creating validation dataloader...")
         valid_loader = DataLoader(ImagePreprocessor
                                   (val_metadata,
-                                   channels_mode="L",
+                                   channels_mode=channels_mode,
                                    return_study_id=False,
                                    use_bucket=use_bucket),
                               batch_size=BATCH_SIZE, shuffle=False,
@@ -151,7 +153,7 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
 
 
 def get_test_dataloader( pin_memory=False,
-                         full_data=False, verify_existence=False, use_bucket=False, channels_mode="L"):
+                         full_data=False, verify_existence=False, use_bucket=False, channels_mode="RGB"):
     """
         Get the test dataloader.
 
