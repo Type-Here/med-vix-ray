@@ -1,4 +1,7 @@
 import json
+import math
+from typing import Optional
+
 import torch
 import os
 import torch.nn as nn
@@ -535,10 +538,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.graph_matrix = graph_matrix
 
         # Register the forward hook on the target attention module.
-        target_attn_module = self.swin_model.layers[-1].blocks[-1].attn
-        target_attn_module.register_forward_hook(self._save_attn_hook)
-
-
+        self.__patch_window_attention_hook()
 
         # Initialize the GraphAttentionBias module
         # which will be used to inject the graph bias into the attention scores.
@@ -584,6 +584,70 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self.graph_nudger = GraphNudger(eta=0.01)  # nudging learning rate
 
         # Note: self.classifier is already defined in the parent class (SwinMIMICClassifier).
+
+    def __patch_window_attention_hook(self):
+        """
+        Wrap the original forward of a WindowAttention module to save attn_weights.
+        """
+        attn_module = self.swin_model.layers[-1].blocks[-1].attn  # Get the last attention module
+        #original_forward = attn_module.forward
+
+        def new_forward(x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+            """
+                From the original forward, we modify it to compute and hook attention scores
+                "attn_weights" is the attribute where we save the attention weights.
+                See: https://github.com/huggingface/pytorch-image-models/blob/main/timm/models/swin_transformer_v2.py
+            """
+            # Call the original forward (which now includes attention computation)
+            bat_, n_tok, embed_dim = x.shape
+
+            if attn_module.q_bias is None:
+                qkv = attn_module.qkv(x)
+            else:
+                qkv_bias = torch.cat((attn_module.q_bias, attn_module.k_bias, attn_module.v_bias))
+                if attn_module.qkv_bias_separate:
+                    qkv = attn_module.qkv(x)
+                    qkv += qkv_bias
+                else:
+                    qkv = fc.linear(x, weight=attn_module.qkv.weight, bias=qkv_bias)
+            qkv = qkv.reshape(bat_, n_tok, 3, attn_module.num_heads, -1).permute(2, 0, 3, 1, 4)
+            q, k, v = qkv.unbind(0)
+
+            # Cosine attention
+            attn = (fc.normalize(q, dim=-1) @ fc.normalize(k, dim=-1).transpose(-2, -1))
+            logit_scale = torch.clamp(attn_module.logit_scale, max=math.log(1. / 0.01)).exp()
+            attn = attn * logit_scale
+
+            relative_position_bias_table = attn_module.cpb_mlp(attn_module.relative_coords_table).view(-1,
+                                                                                                       attn_module.num_heads)
+            relative_position_bias = relative_position_bias_table[attn_module.relative_position_index.view(-1)].view(
+                attn_module.window_size[0] * attn_module.window_size[1],
+                attn_module.window_size[0] * attn_module.window_size[1],
+                -1
+            )  # [Wh*Ww, Wh*Ww, nH]
+            relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()
+            relative_position_bias = 16 * torch.sigmoid(relative_position_bias)
+            attn = attn + relative_position_bias.unsqueeze(0)
+
+            if mask is not None:
+                num_win = mask.shape[0]
+                attn = attn.view(-1, num_win, attn_module.num_heads, n_tok, n_tok) + mask.unsqueeze(1).unsqueeze(0)
+                attn = attn.view(-1, attn_module.num_heads, n_tok, n_tok)
+                attn = attn_module.softmax(attn)
+            else:
+                attn = attn_module.softmax(attn)
+
+            # Save the attention weights!
+            attn_module.attn_weights = attn.detach() # HOOK
+
+            attn = attn_module.attn_drop(attn)
+            x = (attn @ v).transpose(1, 2).reshape(bat_, n_tok, embed_dim)
+            x = attn_module.proj(x)
+            x = attn_module.proj_drop(x)
+            return x
+
+        # Inject the new forward
+        attn_module.forward = new_forward
 
     def _save_attn_hook(self, module, _, output):
         # Assume that output contains the attention weights.
@@ -1152,6 +1216,11 @@ if __name__ == "__main__":
     # Example: model.train_model(train_loader)
     # Note: train_loader should be defined with your training dataset.
 
+    print("Testing attention hook...")
+    general.test_attention_hook(med_model.swin_model, t_device)
+    print("[INFO] Overwritten attention forward function with hook-enabled version.")
+
+    print(" -- Verifying save directory and loading model state if exists --")
     SAVE_DIR = os.path.join(MODELS_DIR, "med-vix-ray")
 
     if not os.path.exists(SAVE_DIR):
@@ -1189,7 +1258,7 @@ if __name__ == "__main__":
                                                             use_bucket=True, verify_existence=False, full_data=True)
 
     # Train the model
-    print("Starting training of Med-ViX-Ray...")
+    print("-- Starting training of Med-ViX-Ray --")
     # NOTE: for other parameters, settings.py defines default values
     med_model.train_model(train_loader=training_loader, validation_loader=valid_loader)
 
@@ -1199,7 +1268,7 @@ if __name__ == "__main__":
     print(f"Model saved")
 
     # Evaluate the model
-    print("Starting evaluation...")
+    print(" -- Starting evaluation --")
     metrics_dict = med_model.model_evaluation(valid_loader, save_stats=False)
     print("Evaluation completed.")
     print("Metrics:", metrics_dict)
