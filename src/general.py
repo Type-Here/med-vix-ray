@@ -207,3 +207,55 @@ def get_test_dataloader( pin_memory=False,
                              num_workers=1,
                              pin_memory=pin_memory)
     return test_loader
+
+
+# ================================ END OF GENERAL FUNCTIONS =============================== #
+
+# HOOK TESTING
+
+def test_attention_hook(model, device, layer_num=-1, block_num=-1):
+    """
+        Performs a forward pass on a dummy image to verify if the hook has correctly saved the `attn_weights`.
+        Prints the shape and performs basic checks.
+
+        Args:
+            model: The Swin V2 model with the hook already registered.
+            device: torch.device
+            layer_num: Layer to read from (default: last).
+            block_num: Block to read from (default: last).
+
+        Returns:
+            attn_weights: Saved attention tensor, or None.
+    """
+    import torch
+
+    model.eval()
+
+    # Assuming the model is a SwinV2 model with an attention module
+    # Assuming 3 channels and 256x256 input size for the dummy image
+    # Fictitious image with 3 channels, as per current preprocessing
+    dummy_input = torch.randn(1, 3, 256, 256).to(device)
+
+    with torch.no_grad():
+        _ = model(dummy_input)
+
+    # Access the attention weights from the specified layer and block
+    attn_module = model.layers[layer_num].blocks[block_num].attn
+
+    if not hasattr(attn_module, "attn_weights"):
+        print("[❌] Nessun attributo 'attn_weights' salvato nel modulo Attn.")
+        return None
+
+    attn = attn_module.attn_weights
+
+    if attn is None:
+        print("[❌] L'attributo 'attn_weights' è None.")
+        return None
+
+    print(f"[✅] Attention salvata: shape = {attn.shape}, dtype = {attn.dtype}")
+    if attn.dim() == 4:
+        print(f"[ℹ️] Dimensioni: Batch = {attn.shape[0]}, Heads = {attn.shape[1]}, Tokens = {attn.shape[2]}")
+    else:
+        print("[⚠️] Shape non atteso: attenzione, potresti dover cambiare l'hook.")
+
+    return attn
