@@ -70,7 +70,11 @@ class AttentionMap:
         Note:
             The CDAM method supports batch input also!
         """
-        self.cdam = LayerAttribution(model, model.layers[-1].blocks[-1].attn.proj)
+        # Get the target layer for CDAM (using the normalization of the last attention block)
+        # It still contains spatial information but is more stable than the attention projection.
+        self.cdam = LayerAttribution(model, model.layers[-1].blocks[-1].norm2)
+
+        #self.cdam = LayerAttribution(model, model.layers[-1].blocks[-1].attn.proj)
         self.generate_attention_map = self.__generate_attention_map_cdam
 
     # ============== GRAD-CAM =================
@@ -274,49 +278,3 @@ class AttentionMap:
         plt.imshow(self.map, cmap='jet')
         plt.colorbar()
         plt.show()
-
-    # ========== ADJUSTMENT =============
-    def adjust_attention_map(self, mean_intensity, pathology):
-        """
-        Adjust the attention map based on clinical consistency.
-        Args:
-            mean_intensity: Mean intensity of the attention map region.
-            pathology: Pathology type.
-        Returns:
-            The adjusted attention map.
-        Raises:
-            ValueError: If no attention map has been generated.
-        """
-        if self.map is None:
-            raise ValueError("No attention map generated yet.")
-
-        # Compare with clinical values (this is a placeholder for more sophisticated logic)
-        if self.compare_with_clinical_values(mean_intensity, np.var(self.map), pathology) == "❌ Potential inconsistency":
-            # Reduce attention map values in the region of interest
-            self.map[self.map > ATTENTION_MAP_THRESHOLD] *= 0.7
-        return self.map
-
-    def compare_with_clinical_values(self, mean_intensity, variance_intensity, pathology):
-        """
-        Compare intensity values with known clinical ranges.
-        This is a placeholder function; extend as needed.
-        """
-        clinical_ranges = {
-            "consolidation": {"mean_range": (-100, 100), "variance_range": (0, 50)},
-            "ground_glass_opacity": {"mean_range": (-700, -500), "variance_range": (50, 150)},
-            "normal": {"mean_range": (-800, -700), "variance_range": (0, 30)},
-        }
-
-        if pathology in clinical_ranges:
-            mean_range = clinical_ranges[pathology]["mean_range"]
-            variance_range = clinical_ranges[pathology]["variance_range"]
-
-            mean_match = mean_range[0] <= mean_intensity <= mean_range[1]
-            variance_match = variance_range[0] <= variance_intensity <= variance_range[1]
-
-            if mean_match and variance_match:
-                return "✅ Consistency with clinical data"
-            else:
-                return "❌ Potential inconsistency - Model attention may be incorrect"
-        else:
-            return "⚠️ No clinical data available for this pathology"
