@@ -155,7 +155,7 @@ class EarlyStopper:
 # ================================== LOSS FUNCTION ================================== #
 
 
-def focal_loss(logits, targets, alpha=0.25, gamma=2.0):
+def focal_loss(logits, targets, alpha=0.75, gamma=2.0):
     """
         Focal loss function for classification tasks.
         Args:
