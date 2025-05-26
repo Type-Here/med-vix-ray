@@ -129,17 +129,27 @@ def _compute_region_stats(heatmap: torch.Tensor, region_mask: torch.Tensor,
 
 # Optimized feature extraction for multiregion attention maps
 def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: torch.device,
-                                              threshold: float = 0.5, min_area_frac: float = 0.001,
-                                              max_regions_per_image: int = 5) -> list[list[Tensor]]:
+                                              threshold = 'percentile', min_area_frac: float = 0.001,
+                                              max_regions_per_image: int = 5,
+                                              current_epoch = 10, max_epoch = 10,
+                                              max_q: float = 0.9, min_q: float = 0.7
+                                              ) -> list[list[Tensor]]:
     """
     Optimized multiregion feature extraction with optional sign matching capability.
+    If `threshold` is 'adaptive', it computes Otsu-like thresholds,
+    else if is 'percentile' uses dynamic percentile based on current epoch.
+    If `threshold` is a float, it uses that static value.
 
     Args:
         attn_maps (torch.Tensor): [B, 1, H, W] or [B, H, W]
         device (torch.device): computation device
-        threshold (float): binarization threshold (or 'adaptive' for Otsu-like)
+        threshold (Union[float, str]): threshold for binarization. Can be a float if static, or string 'adaptive' or 'percentile'.
         min_area_frac (float): minimum region area fraction
         max_regions_per_image (int): max number of regions to extract per image
+        current_epoch (int): current training epoch for dynamic thresholding (percentile)
+        max_epoch (int): maximum training epochs for dynamic thresholding (percentile)
+        max_q (float): maximum percentile for dynamic thresholding (percentile)
+        min_q (float): minimum percentile for dynamic thresholding (percentile)
 
     Returns:
         list[dict]: list of dictionaries with region features
@@ -162,28 +172,16 @@ def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: t
 
     # Use adaptive threshold if requested (Otsu-like: variance maximization)
     if threshold == 'adaptive':
-        thresholds = []
-        for i in range(batch):
-            hist = torch.histc(normalized_maps[i], bins=256, min=0, max=1)
-            cum_hist = torch.cumsum(hist, dim=0)
-            total = cum_hist[-1]
+        thresholds = __otsu_like_thresholds(batch, device, normalized_maps)
 
-            sum_total = torch.sum(torch.arange(256, device=device) * hist) / 256
-            w_bg = cum_hist / total
-            w_fg = 1 - w_bg
+    elif threshold == 'percentile':
+        # Compute dynamic percentile threshold
+        progress = min(current_epoch / max_epoch, 1.0)
+        current_q = max_q - (max_q - min_q) * progress
+        thresholds = [torch.quantile(normalized_maps[i], current_q).item() for i in range(batch)]
 
-            # Avoid division by zero
-            w_bg = torch.where(w_bg < 1e-6, torch.ones_like(w_bg), w_bg)
-            w_fg = torch.where(w_fg < 1e-6, torch.ones_like(w_fg), w_fg)
-
-            mean_bg = torch.cumsum(torch.arange(256, device=device) * hist, dim=0) / (256 * cum_hist + 1e-6)
-            mean_fg = (sum_total - torch.cumsum(torch.arange(256, device=device) * hist, dim=0)) / (
-                        256 * (total - cum_hist) + 1e-6)
-
-            variance = w_bg * w_fg * (mean_bg - mean_fg) ** 2
-            thresh_idx = torch.argmax(variance)
-            thresholds.append((thresh_idx / 255).item())
     else:
+        # Static threshold
         thresholds = [threshold] * batch
 
     return_features = []
@@ -231,6 +229,31 @@ def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: t
         return_features.append([x for _, x in regions])  # Extract only the stats
 
     return return_features # list of B elements, each with a list of region features
+
+
+def __otsu_like_thresholds(batch, device, normalized_maps):
+    thresholds = []
+    for i in range(batch):
+        hist = torch.histc(normalized_maps[i], bins=256, min=0, max=1)
+        cum_hist = torch.cumsum(hist, dim=0)
+        total = cum_hist[-1]
+
+        sum_total = torch.sum(torch.arange(256, device=device) * hist) / 256
+        w_bg = cum_hist / total
+        w_fg = 1 - w_bg
+
+        # Avoid division by zero
+        w_bg = torch.where(w_bg < 1e-6, torch.ones_like(w_bg), w_bg)
+        w_fg = torch.where(w_fg < 1e-6, torch.ones_like(w_fg), w_fg)
+
+        mean_bg = torch.cumsum(torch.arange(256, device=device) * hist, dim=0) / (256 * cum_hist + 1e-6)
+        mean_fg = (sum_total - torch.cumsum(torch.arange(256, device=device) * hist, dim=0)) / (
+                256 * (total - cum_hist) + 1e-6)
+
+        variance = w_bg * w_fg * (mean_bg - mean_fg) ** 2
+        thresh_idx = torch.argmax(variance)
+        thresholds.append((thresh_idx / 255).item())
+    return thresholds
 
 
 # ============================= OTHER FUNCTIONS ============================= #
