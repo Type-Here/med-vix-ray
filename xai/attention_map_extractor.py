@@ -1,4 +1,5 @@
 import torch
+from timm.models.swin_transformer_v2 import window_reverse
 
 class SelfAttentionMapExtractor:
     """
@@ -55,8 +56,11 @@ class SelfAttentionMapExtractor:
         # Reshape the diagonal attention scores into a square grid
         diag_attn = diag_attn.view(bat, win_size, win_size)  # [B, H, W]
 
+        # Convert to global attention map using window_reverse [B, H_feat, W_feat]
+        attn_global = window_reverse(diag_attn, win_size, h_img, w_img)
+
         # Resize to original image size
-        attn_resized = torch.nn.functional.interpolate(diag_attn, size=(h_img, w_img),
+        attn_resized = torch.nn.functional.interpolate(attn_global, size=(h_img, w_img),
                                                        mode='bicubic', align_corners=False)
 
         # Normalize per sample between [0, 1]
