@@ -17,7 +17,7 @@ from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSI
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
 
-import xai.attention_map as attention
+import xai.attention_map_extractor as attention
 import xai.feature_extract as xai_fe
 import xai.edges_stats_update as update_edges
 from src.train_helpers import CustomLRScheduler, EarlyStopper, focal_loss
@@ -567,8 +567,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         print("Initializing attention map modules...")
         # Initialize the AttentionMap module.
         # This module will extract attention maps from the second last layer (before the classifier head)
-        # using techniques such as cdam (or gradcam) to later compare with sign node statistics.
-        self.attention_map_generator = attention.AttentionMap(model=self.swin_model, xai_type="cdam")
+        # using techniques such as rollout-like attention to later compare with sign node statistics.
+        self.attention_map_generator = attention.SelfAttentionMapExtractor(model=self.swin_model)
 
         # Initialize the GraphAttentionModule.
         # This module uses the (normalized) adjacency matrix (from both correlation and finding edges)
@@ -648,11 +648,6 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # Inject the new forward
         attn_module.forward = new_forward
-
-    def _save_attn_hook(self, module, _, output):
-        # Assume that output contains the attention weights.
-        # If output is a tuple, adjust accordingly.
-        module.attn_weights = output  # or output[1] if output is a tuple.
 
     def compute_graph_bias(self, base_logits):
         """
@@ -781,9 +776,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.classifier_logits.register_hook(self._save_classifier_grad)
 
         # 4. Extract attention maps and features
-        att_maps_batch = self.attention_map_generator.generate_attention_map(self.swin_model, x)
+        att_maps_batch = self.attention_map_generator.extract(x)
         features_dict_batch = xai_fe.extract_attention_batch_multiregion_torch(att_maps_batch, self.device,
-                                                                         threshold=ATTENTION_MAP_THRESHOLD)
+                                                    threshold=ATTENTION_MAP_THRESHOLD, # Now defaults to 'percentile' threshold
+                                                    current_epoch=self.current_epoch)
 
         # 4b. Update graph from extracted features
         # Update the graph with the new feature statistics.
