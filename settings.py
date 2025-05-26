@@ -148,7 +148,13 @@ ETA_GRAPH = 0.1 # Learning rate for the graph nudger module
 
 # ====== PARAMETERS FOR FEATURE EXTRACTION IN XAI (Attention Map) ======
 
-ATTENTION_MAP_THRESHOLD = 0.4 # Threshold for attention map analysis
+# Threshold for attention map analysis on active regions identification
+# Values:
+# Float between 0.0 and 1.0: Use static threshold for attention map analysis
+# String "adaptive": Use adaptive otsu-like threshold for attention map analysis
+# String "percentile": Use percentile threshold for attention map analysis
+# (percentile on minimum and maximum values; curricular on training epochs)
+ATTENTION_MAP_THRESHOLD = 'percentile' # Threshold for attention map analysis
 
 
 # ===== PARAMETERS FOR SIMILARITY CALCULATION ======

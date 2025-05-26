@@ -1177,7 +1177,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         try:
             # Make sure the directory exists
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            self.save_model(path)
+            #self.save_model(path)
         except Exception as e:
             print(f"[ERROR] Error saving whole model: {e}")
 
