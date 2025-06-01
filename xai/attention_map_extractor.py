@@ -31,14 +31,11 @@ class SelfAttentionMapExtractor:
         """
         # Ensure model in eval mode and disable grad
         was_training = self.model.training
-        b_size, _, h_img, w_img = x.shape
-
         self.model.eval()
 
         with torch.no_grad():
             _ = self.model(x)
 
-        # Restore training mode if it was on
         if was_training:
             self.model.train()
 
@@ -46,21 +43,29 @@ class SelfAttentionMapExtractor:
         if attn_scores is None:
             raise ValueError("Attention weights not captured. Check hook.")
 
-        attn_scores = attn_scores.mean(dim=1)  # mean over heads → [B, N, N]
-        diag_attn = attn_scores.diagonal(dim1=-2, dim2=-1)  # self-attention
+        b_times_w, num_heads, n, _ = attn_scores.shape
+        bat = x.shape[0]
+        ws = int(n ** 0.5)  # window WxW
 
-        bat, n_tok = diag_attn.shape
-        # Reshape to square grid
-        win_size = int(n_tok ** 0.5)
+        attn_scores = attn_scores.mean(dim=1)  # mean over heads → [B*num_win, N, N]
+        diag_attn = attn_scores.diagonal(dim1=-2, dim2=-1)  # self-attn
+        diag_attn = diag_attn.view(-1, 1, ws, ws)  # [B*num_win, 1, Ws, Ws]
 
-        # Reshape the diagonal attention scores into a square grid
-        diag_attn = diag_attn.view(bat, win_size, win_size)  # [B, H, W]
+        # Get H_feat, W_feat from input
+        _, _, h_img, w_img = x.shape
+        num_windows_per_img = b_times_w // bat
+        num_w_h = h_img // ws
+        num_w_w = w_img // ws
+        assert num_windows_per_img == num_w_h * num_w_w, "Window count mismatch"
 
-        # Convert to global attention map using window_reverse [B, H_feat, W_feat]
-        attn_global = window_reverse(diag_attn, (win_size, win_size), (h_img, w_img))
+        # Get global attn
+        attn_map = window_reverse(
+            diag_attn, window_size=(ws, ws),
+            H=num_w_h * ws, W=num_w_w * ws
+        )  # [B, 1, H_feat, W_feat]
 
         # Resize to original image size
-        attn_resized = torch.nn.functional.interpolate(attn_global, size=(h_img, w_img),
+        attn_resized = torch.nn.functional.interpolate(attn_map, size=(h_img, w_img),
                                                        mode='bicubic', align_corners=False)
 
         # Normalize per sample between [0, 1]
