@@ -1,5 +1,5 @@
 import json
-import sys
+#import sys
 
 import torch
 import timm
@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 # Dataset path
 from settings import DATASET_PATH, MIMIC_LABELS, MODELS_DIR, SWIN_MODEL_DIR, LEARNING_RATE_INPUT_LAYER
 from settings import NUM_EPOCHS, UNBLOCKED_LEVELS, LEARNING_RATE_CLASSIFIER, LEARNING_RATE_TRANSFORMER
-from settings import SWIN_MODEL_SAVE_PATH, SWIN_STATS_PATH
+from settings import SWIN_MODEL_SAVE_PATH
 
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, roc_curve, \
     precision_recall_curve, average_precision_score
@@ -428,8 +428,7 @@ class SwinMIMICClassifier(nn.Module):
                                label_names: list[str]
                                ) -> dict[str, dict[str, float]]:
         """
-        Calcola per ogni etichetta (multilabel) ROC AUC, AUPRC e la loro differenza.
-
+        Calculate ROC AUC, AUPRC and their difference (delta) for each label in a multi-label classification task.
         Args:
             y_true (np.ndarray): array binario [N, C] delle vere etichette.
             y_score (np.ndarray): array [N, C] delle probabilità previste.
@@ -440,7 +439,7 @@ class SwinMIMICClassifier(nn.Module):
                label_name: {
                  "roc_auc": float,
                  "auprc": float,
-                 "delta": float  # auprc - roc_auc
+                 "delta": float # auprc - roc_auc
                },
                ...
             }
@@ -510,8 +509,8 @@ class SwinMIMICClassifier(nn.Module):
 
         # Save in JSON
         stats_path = os.path.join(out_dir, "metrics.json")
-        with open(stats_path, "w") as f:
-            json.dump(metrics, f, indent=2)
+        with open(stats_path, "w") as fi:
+            json.dump(metrics, fi, indent=2)
         print(f"Saved metrics to {stats_path}")
         print(f"Saved ROC plot to {roc_path}")
         print(f"Saved PR plot to  {pr_path}")

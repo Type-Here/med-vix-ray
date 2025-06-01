@@ -587,10 +587,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
     def __patch_window_attention_hook(self):
         """
-        Wrap the original forward of a WindowAttention module to save attn_weights.
+        Replaces the forward method of the last WindowAttention module to store attention weights.
         """
-        attn_module = self.swin_model.layers[-1].blocks[-1].attn  # Get the last attention module
-        #original_forward = attn_module.forward
+        attn_module = self.swin_model.layers[-1].blocks[-1].attn  # Last attention module
 
         def new_forward(x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
             """
