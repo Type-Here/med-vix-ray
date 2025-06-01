@@ -43,26 +43,28 @@ class SelfAttentionMapExtractor:
         if attn_scores is None:
             raise ValueError("Attention weights not captured. Check hook.")
 
-        b_times_w, num_heads, n, _ = attn_scores.shape
-        bat = x.shape[0]
+        b_w, num_heads, n, _ = attn_scores.shape
+        bat, _, h_img, w_img = x.shape
         ws = int(n ** 0.5)  # window WxW
 
         attn_scores = attn_scores.mean(dim=1)  # mean over heads → [B*num_win, N, N]
         diag_attn = attn_scores.diagonal(dim1=-2, dim2=-1)  # self-attn
         diag_attn = diag_attn.view(-1, 1, ws, ws)  # [B*num_win, 1, Ws, Ws]
 
-        # Get H_feat, W_feat from input
-        _, _, h_img, w_img = x.shape
-        num_windows_per_img = b_times_w // bat
-        num_w_h = h_img // ws
-        num_w_w = w_img // ws
-        assert num_windows_per_img == num_w_h * num_w_w, "Window count mismatch"
+        diag_attn = diag_attn.unsqueeze(-1)
+
+        num_windows_per_img = b_w // bat  # number of windows per image
+        windows_per_side = int(round(num_windows_per_img ** 0.5))  # sqrt(num_windows_per_img)
+        h_feat = windows_per_side * ws  # token height last feature-map
+        w_feat = (num_windows_per_img // windows_per_side) * ws  # token width
 
         # Get global attn
         attn_map = window_reverse(
-            diag_attn, window_size=(ws, ws),
-            H=num_w_h * ws, W=num_w_w * ws
+            diag_attn, window_size=(ws, ws), img_size=(h_feat, w_feat)
         )  # [B, 1, H_feat, W_feat]
+
+        # Permute to match expected output shape
+        attn_map = attn_map.permute(0, 3, 1, 2).contiguous()  # → (B, 1, H_feat, W_feat)
 
         # Resize to original image size
         attn_resized = torch.nn.functional.interpolate(attn_map, size=(h_img, w_img),
