@@ -63,7 +63,7 @@ def bayes_b_distribution(graph, positive_disease_ids, gt_entry):
 
         # Update parameters
         if is_positive:
-            edge["alpha"] += min(s_gt + 0.1, 1.0)  # add a small positive value
+            edge["alpha"] += min(s_gt + 0.2, 1.0)  # add a small positive value
         else:
             edge["beta"] += min(s_gt + 0.1, 1.0)  # add a small positive value
 
