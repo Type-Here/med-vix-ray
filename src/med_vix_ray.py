@@ -503,6 +503,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self.classifier_grad = None
         # Placeholder for graph features list to be used for nudging. Will be filled on first call needed.
         self.stats_keys = None
+        # Placeholder for the features extracted from the attention maps.
+        self.features_dict_batch = None  # This will be a dictionary of features for each sample in the batch.
+
+        # Placeholder for log of features extracted and signs found number in debug mode.
+        self._debug_features_log = None
+        self.save_debug_features_log = False  # Flag to control whether to save debug features log.
 
         # Flag indicating whether graph guidance has been injected into transformer layers.
         self.is_graph_used = False
@@ -755,6 +761,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         self.classifier_grad = None  # Reset the classifier gradient for each forward pass.
         self.signs_found = None  # Reset the signs found for each forward pass.
+        self.features_dict_batch = None  # Reset the features dictionary for each forward pass.
 
         # 1b. Else, if graph guidance is active, use graph
         if use_graph_guidance and not self.is_graph_used:
@@ -780,6 +787,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                                                     threshold=ATTENTION_MAP_THRESHOLD, # Now defaults to 'percentile' threshold
                                                     current_epoch=self.current_epoch)
 
+        self.features_dict_batch = features_dict_batch  # Store for use in training loop
+
         # 4b. Update graph from extracted features
         # Update the graph with the new feature statistics.
         _ , signs_found = xai_fe.find_match_and_update_graph_features(
@@ -791,6 +800,16 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         )
 
         self.signs_found = signs_found
+
+        # If debugging is enabled, update the number of signs found and features extracted
+        if self.save_debug_features_log:
+            # Make sure the current epoch entry exists in the debug log
+            if self.current_epoch not in self._debug_features_log:
+                self._debug_features_log[self.current_epoch] = {"signs_found": 0, "features_extracted": 0}
+
+            # Update the counts directly without creating a new dictionary
+            self._debug_features_log[self.current_epoch]["signs_found"] += len(signs_found)
+            self._debug_features_log[self.current_epoch]["features_extracted"] += len(features_dict_batch)
 
         # 1a. If graph guidance is not active return the classifier logits directly.
         if not use_graph_guidance:
@@ -841,7 +860,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                     lambda_sim=LAMBDA_SIM,
                     lambda_kl=LAMBDA_KL,
                     patience=EARLY_STOPPING_PATIENCE, use_validation=True,
-                    validation_loader=None):
+                    validation_loader=None,
+                    debug_features_log=False):
         """
         Custom training loop that incorporates the graph-based loss regularization.
 
@@ -866,7 +886,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             patience (int): Number of epochs for early stopping.
             use_validation (bool): Whether to use validation data for early stopping.
             validation_loader (DataLoader, optional): DataLoader for the validation dataset.
+            debug_features_log (bool): If True, log the number of features extracted and signs found per epoch.
         """
+        if debug_features_log:
+            self.save_debug_features_log = True
+            self._debug_features_log = {}
+
         ## Set the model to training mode.
         self.train()
         # Set the GraphNudger Module to be used.
@@ -949,6 +974,11 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 running_loss += loss_total.detach().item()
 
                 count += 1
+                if self.save_debug_features_log and count % 100 == 0:
+                    print(f"[DEBUG] Epoch {epoch + 1}, Batch {count}/{len_loader} - "
+                          f"Signs found: {len(self.signs_found)}, "
+                          f"Features extracted: {len(self.features_dict_batch)}")
+
                 if count % 1000 == 0:
                     print("Step:", count ," overall steps:", len_loader)
 
