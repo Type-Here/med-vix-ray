@@ -363,22 +363,20 @@ class SwinMIMICClassifier(nn.Module):
 
                 if len(all_labels) % 200 == 0:
                     print("Step:", len(all_labels), "overall steps:", num_batches)
-                # Early exit for debugging
-                if len(all_labels) > 100:
-                    break
 
         y_true = np.vstack(all_labels)  # shape [N, C]
         y_score = np.vstack(all_scores)  # shape [N, C]
         y_pred = (y_score > threshold).astype(int)
 
-        # Metriche di base
-        metrics = {
-            "Exact Match Ratio": accuracy_score(y_true, y_pred),
-            "F1_macro": f1_score(y_true, y_pred, average="macro", zero_division=0),
-            "F1_weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0),
-            "Precision_macro": precision_score(y_true, y_pred, average="macro", zero_division=0),
-            "Recall_macro": recall_score(y_true, y_pred, average="macro", zero_division=0),
-        }
+        # Macro and micro metrics
+        metrics = {"Exact Match Ratio": accuracy_score(y_true, y_pred),
+                   "F1_macro": f1_score(y_true, y_pred, average="macro", zero_division=0),
+                   "F1_weighted": f1_score(y_true, y_pred, average="weighted", zero_division=0),
+                   "Precision_macro": precision_score(y_true, y_pred, average="macro", zero_division=0),
+                   "Recall_macro": recall_score(y_true, y_pred, average="macro", zero_division=0),
+                   "F1_micro": f1_score(y_true, y_pred, average="micro", zero_division=0),
+                   "Precision_micro": precision_score(y_true, y_pred, average="micro", zero_division=0),
+                   "Recall_micro": recall_score(y_true, y_pred, average="micro", zero_division=0)}
 
         # ROC AUC e AUPRC per classe e media macro
         n_classes = y_true.shape[1]
@@ -409,11 +407,25 @@ class SwinMIMICClassifier(nn.Module):
         metrics["AUPRC_macro"] = np.mean(pr_aps)
         metrics["ROC_AUC_per_class"] = roc_aucs
         metrics["AUPRC_per_class"] = pr_aps
+        # Compatible Labels with flamingo, in order:
+        # Cardiomegaly, Edema, Enlarged CM, Fracture, Lung Opacity, Pleural Effusion
+        flamingo_indices = [1, 3, 4, 5, 7, 9]
+
+        # Data Subset
+        y_true_flam = y_true[:, flamingo_indices]
+        y_pred_flam = y_pred[:, flamingo_indices]
+
+        # Flamingo metrics micro
+        metrics["F1_micro_flamingo6"] = f1_score(y_true_flam, y_pred_flam, average="micro", zero_division=0)
+        metrics["Precision_micro_flamingo6"] = precision_score(y_true_flam, y_pred_flam, average="micro",
+                                                               zero_division=0)
+        metrics["Recall_micro_flamingo6"] = recall_score(y_true_flam, y_pred_flam, average="micro", zero_division=0)
+
         if save_stats:
             self._save_stats_improved(all_fpr, mean_prec, mean_tpr,
                                       metrics, n_classes, out_dir)
 
-        # Stampa a video
+        # Print metrics
         for k, v in metrics.items():
             # evita di stampare intere liste
             if isinstance(v, list):
