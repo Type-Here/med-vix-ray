@@ -66,7 +66,8 @@ def pil_cloud_open(path):
 
 
 # Function to resize while maintaining aspect ratio and add padding
-def preprocess_image(image, channels_mode="RGB", image_size=(256, 256), view_position='AP'):
+def preprocess_image(image, channels_mode="RGB", image_size=(256, 256),
+                     view_position='AP', augment=False):
     """
     Preprocess the image by resizing it while maintaining the aspect ratio and adding padding.
     The View Position is  'AP' or 'PA' for Anterior-Posterior or Posterior-Anterior projection.
@@ -77,6 +78,7 @@ def preprocess_image(image, channels_mode="RGB", image_size=(256, 256), view_pos
         channels_mode (str): Color mode of the image. Default is "L". Accepts "RGB" or "L" (grayscale).
         image_size (tuple[int, int]): Desired output size of the image. Default is (256, 256).
         view_position (str): The view position of the image. Default is 'AP'.
+        augment (bool): If True, apply random augmentations like rotation, affine transformations, and color jitter.
     Returns:
         torch.Tensor: Preprocessed image tensor.
     """
@@ -108,8 +110,17 @@ def preprocess_image(image, channels_mode="RGB", image_size=(256, 256), view_pos
     padded_img = Image.new(channels_mode, image_size, color=color)
     padded_img.paste(img, ((image_size[0] - new_width) // 2, (image_size[1] - new_height) // 2))
 
+    # Define transforms
+    aug_transforms = []
+    if augment:
+        aug_transforms.extend([
+            transforms.RandomRotation(10),
+            transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05)),
+            transforms.ColorJitter(brightness=0.1, contrast=0.1),
+        ])
+
     # Convert to tensor and normalize for PyTorch
-    transform = transforms.Compose([
+    transform = transforms.Compose(aug_transforms + [
         #transforms.Resize(image_size),
         transforms.ToTensor(),
         transforms.Normalize(mean=mean, std=std),  # Standard Normalization,
@@ -145,7 +156,7 @@ class ImagePreprocessor(Dataset):
             tuple(torch.Tensor, torch.Tensor): Preprocessed image tensor; List of labels for the image.
     """
     def __init__(self, data_dict, transform = None, image_size=(256, 256),
-                 channels_mode="RGB", return_study_id=False, use_bucket=False):
+                 channels_mode="RGB", return_study_id=False, use_bucket=False, augment=False):
         """
         Initialize the dataset with image paths, labels and transformations.
         `data_dict` structure:
@@ -168,6 +179,7 @@ class ImagePreprocessor(Dataset):
             return_study_id (bool): If True, the dataloader will return the study_id along with the image and label in the tuple.
             use_bucket (bool): If True, the function will use the bucketed dataset in Dataloader.
             It defaults to False in order to avoid unnecessary checks.
+            augment (bool): If True, apply random augmentations like rotation, affine transformations, and color jitter.
 
         """
 
@@ -185,6 +197,7 @@ class ImagePreprocessor(Dataset):
         self.transform = transform
 
         self.return_study_id = return_study_id
+        self.augment = augment
 
     def __len__(self):
         return len(self.data_dict)
@@ -212,7 +225,8 @@ class ImagePreprocessor(Dataset):
         res_list = [self.transform(img) if self.transform
                     else preprocess_image(img,
                                           channels_mode = self.channels_mode,
-                                          view_position= self.data_dict[idx]["view_position"]
+                                          view_position= self.data_dict[idx]["view_position"],
+                                          augment=self.augment
                                           ),
                     label_tensor] # Append the label tensor to the result list
 
