@@ -1262,9 +1262,17 @@ if __name__ == "__main__":
     med_model.save_model(model_path)
     print(f"Model saved")
 
+
     # Evaluate the model
     print(" -- Starting evaluation --")
-    metrics_dict = med_model.model_evaluation(valid_loader, save_stats=False)
+    # Load the test dataset
+    print("Loading test dataset...")
+    test_loader = general.get_test_dataloader(full_data=True, pin_memory=is_cuda,
+                                              use_bucket=True, verify_existence=False,
+                                              channels_mode="RGB")
+    print("Test dataset loaded.")
+
+    metrics_dict = med_model.model_evaluation(test_loader, save_stats=False)
     print("Evaluation completed.")
     print("Metrics:", metrics_dict)
 
