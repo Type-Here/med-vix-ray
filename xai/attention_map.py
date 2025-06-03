@@ -220,7 +220,10 @@ class AttentionMap:
 
         # Create a mask by selecting pixels with high attention
         # returns a boolean array
-        self.mask = heatmap > ATTENTION_MAP_THRESHOLD  # Threshold
+        if isinstance(ATTENTION_MAP_THRESHOLD, str):
+            self.mask = heatmap > 0.5  # Default threshold for adaptive or percentile
+        else:
+            self.mask = heatmap > ATTENTION_MAP_THRESHOLD  # Threshold
 
         # Extract the intensity values from the original image
         intensities = image[self.mask]
