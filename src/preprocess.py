@@ -67,7 +67,7 @@ def pil_cloud_open(path):
 
 # Function to resize while maintaining aspect ratio and add padding
 def preprocess_image(image, channels_mode="RGB", image_size=(256, 256),
-                     view_position='AP', augment=False):
+                     view_position='AP', augment=False, is_train=False):
     """
     Preprocess the image by resizing it while maintaining the aspect ratio and adding padding.
     The View Position is  'AP' or 'PA' for Anterior-Posterior or Posterior-Anterior projection.
@@ -79,21 +79,12 @@ def preprocess_image(image, channels_mode="RGB", image_size=(256, 256),
         image_size (tuple[int, int]): Desired output size of the image. Default is (256, 256).
         view_position (str): The view position of the image. Default is 'AP'.
         augment (bool): If True, apply random augmentations like rotation, affine transformations, and color jitter.
+        is_train (bool): If True, apply randomizedCrop instead of centerCrop.
     Returns:
         torch.Tensor: Preprocessed image tensor.
     """
     img = image
     img = img.convert(channels_mode)  # Convert to grayscale if needed
-    # Resizing while maintaining aspect ratio
-    aspect_ratio = img.width / img.height
-    if aspect_ratio > 1:  # Image wider than tall
-        new_width = image_size[0]
-        new_height = int(image_size[1] / aspect_ratio)
-    else:  # Image taller than wide
-        new_height = image_size[1]
-        new_width = int(image_size[0] * aspect_ratio)
-
-    img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
     if channels_mode == "L":
         color = 0
@@ -106,9 +97,6 @@ def preprocess_image(image, channels_mode="RGB", image_size=(256, 256),
         #mean = [0.5, 0.5, 0.5]
         #std = [0.5, 0.5, 0.5]
 
-    # Creation of a white image (padding) (black in this case)
-    padded_img = Image.new(channels_mode, image_size, color=color)
-    padded_img.paste(img, ((image_size[0] - new_width) // 2, (image_size[1] - new_height) // 2))
 
     # Define transforms
     aug_transforms = []
@@ -119,16 +107,21 @@ def preprocess_image(image, channels_mode="RGB", image_size=(256, 256),
             transforms.ColorJitter(brightness=0.1, contrast=0.1),
         ])
 
+
+    # Random crop for training, center crop for validation/testing
+    aug_transforms.append(transforms.RandomCrop(image_size[0]) if is_train else transforms.CenterCrop(image_size[0]))
+
     # Convert to tensor and normalize for PyTorch
-    transform = transforms.Compose(aug_transforms + [
-        #transforms.Resize(image_size),
+    transform = transforms.Compose(
+        [transforms.Resize(int(image_size[0] * 1.125), interpolation=Image.BICUBIC)] +
+        aug_transforms + [
         transforms.ToTensor(),
         transforms.Normalize(mean=mean, std=std),  # Standard Normalization,
         transforms.Lambda(lambda x: x.flip(2) if view_position == 'PA' else x)  # Flip horizontally if 'PA'
     ])
 
     #return transform(padded_img).unsqueeze(0)  # Adds batch dimension
-    return transform(padded_img)  # DataLoader will add batch dimension
+    return transform(img)  # DataLoader will add batch dimension
 
 
 class ImagePreprocessor(Dataset):
@@ -156,7 +149,7 @@ class ImagePreprocessor(Dataset):
             tuple(torch.Tensor, torch.Tensor): Preprocessed image tensor; List of labels for the image.
     """
     def __init__(self, data_dict, transform = None, image_size=(256, 256),
-                 channels_mode="RGB", return_study_id=False, use_bucket=False, augment=False):
+                 channels_mode="RGB", return_study_id=False, use_bucket=False, augment=False, is_training=False):
         """
         Initialize the dataset with image paths, labels and transformations.
         `data_dict` structure:
@@ -180,6 +173,7 @@ class ImagePreprocessor(Dataset):
             use_bucket (bool): If True, the function will use the bucketed dataset in Dataloader.
             It defaults to False in order to avoid unnecessary checks.
             augment (bool): If True, apply random augmentations like rotation, affine transformations, and color jitter.
+            is_training (bool): If True, apply randomizedCrop instead of centerCrop.
 
         """
 
@@ -198,6 +192,7 @@ class ImagePreprocessor(Dataset):
 
         self.return_study_id = return_study_id
         self.augment = augment
+        self.is_training = is_training
 
     def __len__(self):
         return len(self.data_dict)
@@ -226,7 +221,8 @@ class ImagePreprocessor(Dataset):
                     else preprocess_image(img,
                                           channels_mode = self.channels_mode,
                                           view_position= self.data_dict[idx]["view_position"],
-                                          augment=self.augment
+                                          augment=self.augment,
+                                          is_train=self.is_training
                                           ),
                     label_tensor] # Append the label tensor to the result list
 
