@@ -17,7 +17,7 @@ class SelfAttentionMapExtractor:
 
         # Default to last block attention
         if target_layer is None:
-            self.target_attn = model.layers[-1].blocks[-1].attn
+            self.target_attn = model.layers[-2].blocks[-1].attn
         else:
             self.target_attn = eval(f"model.{target_layer}")  # risky if not trusted input
 

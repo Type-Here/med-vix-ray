@@ -595,7 +595,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         """
         Replaces the forward method of the last WindowAttention module to store attention weights.
         """
-        attn_module = self.swin_model.layers[-1].blocks[-1].attn  # Last attention module
+        attn_module = self.swin_model.layers[-2].blocks[-1].attn  # Last attention module
 
         def new_forward(x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
             """
@@ -1259,7 +1259,7 @@ if __name__ == "__main__":
     # Load Model if exists
     model_path = os.path.join(SAVE_DIR, "med_vixray_model.pth")
     model_state_path = os.path.join(SAVE_DIR, "med_vixray_model_state.pth")
-    json_graph_path = os.path.join(SAVE_DIR, "med_vixray_graph.json")
+    json_graph_path = os.path.join(SAVE_DIR, "med_vixray_model_graph.json")
 
     if os.path.exists(model_state_path):
         print("[INFO] Model State found! Trying to load it...")
