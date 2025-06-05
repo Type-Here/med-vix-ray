@@ -731,13 +731,14 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 block.attn.forward = new_forward
                 print(f"Injected graph bias into layer {layer_idx}, block {block_idx}")
 
-    def forward(self, x, use_graph_guidance=True):
+    def forward(self, x, use_graph_guidance=True, study_ids=None):
         """
         Perform a forward pass through the model with optional graph-guided nudging.
 
         Args:
             x (torch.Tensor): Input image tensor of shape [B, C, H, W].
             use_graph_guidance (bool): Whether to apply graph-guided nudging.
+            study_ids (list, optional): List of study IDs for the current batch. Used for ground truth lookups.
 
         Returns:
             torch.Tensor: Final logits tensor of shape [B, num_classes].
@@ -796,7 +797,13 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             extracted_features=features_dict_batch,
             device=self.device,
             update_features=self.training,
-            is_inference=self.is_inference or use_graph_guidance
+            is_inference=self.is_inference or use_graph_guidance,
+            use_softmax=True,
+            softmax_params={'temperature': 0.5 if self.training and self.current_epoch < 4 else 0.2,
+                            'top_k': 2,
+                            'use_reports': self.training and self.current_epoch < 8,
+                            'study_ids': study_ids
+                            }
         )
 
         self.signs_found = signs_found
@@ -953,7 +960,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
                 # Forward pass with graph guidance and nudging enabled if active.
                 # This forward pass should update self.base_logits.
-                adjusted_logits = self.forward(images, use_graph_guidance=is_graph_active)
+                adjusted_logits = self.forward(images, use_graph_guidance=is_graph_active, study_ids=study_ids)
 
                 loss_total, _ = self.compute_total_loss(adjusted_logits, labels, self.signs_found,
                                                         lambda_sim=lambda_sim, lambda_kl=lambda_kl,
