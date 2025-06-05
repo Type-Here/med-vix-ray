@@ -156,6 +156,7 @@ ETA_GRAPH = 0.1 # Learning rate for the graph nudger module
 # (percentile on minimum and maximum values; curricular on training epochs)
 ATTENTION_MAP_THRESHOLD = 'percentile' # Threshold for attention map analysis
 
+MAX_REGIONS_PER_IMAGE = 5 # Maximum number of regions to be extracted from the attention map for each image
 
 # ===== PARAMETERS FOR SIMILARITY CALCULATION ======
 

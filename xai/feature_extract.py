@@ -5,7 +5,7 @@ import torch
 import torch.nn.functional as fc
 from torch import Tensor
 
-from settings import NER_GROUND_TRUTH
+from settings import NER_GROUND_TRUTH, MAX_REGIONS_PER_IMAGE
 
 
 # ---- HELPER FUNCTIONS FOR FEATURE EXTRACTION ---- #
@@ -156,7 +156,7 @@ def _compute_region_stats(heatmap: torch.Tensor, region_mask: torch.Tensor,
 # Optimized feature extraction for multiregion attention maps
 def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: torch.device,
                                               threshold='percentile', min_area_frac: float = 0.0005,
-                                              max_regions_per_image: int = 10,
+                                              max_regions_per_image: int = MAX_REGIONS_PER_IMAGE,
                                               current_epoch=10, max_epoch=10,
                                               max_q: float = 0.9, min_q: float = 0.5
                                               ) -> list[list[Tensor]]:

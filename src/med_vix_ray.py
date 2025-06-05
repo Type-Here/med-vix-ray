@@ -801,7 +801,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             use_softmax=True,
             softmax_params={'temperature': 0.5 if self.training and self.current_epoch < 4 else 0.2,
                             'top_k': 2,
-                            'use_reports': self.training and self.current_epoch < 8,
+                            'use_reports': self.training and self.current_epoch < 2,
                             'study_ids': study_ids
                             }
         )
