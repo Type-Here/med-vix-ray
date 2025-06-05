@@ -16,20 +16,41 @@ def _binarize_maps(heatmap: torch.Tensor, threshold: float) -> torch.Tensor:
     Returns:
         binary: FloatTensor [H, W] with 0/1 values
     """
-    return (heatmap > threshold).float()
+    return (heatmap > threshold).to(torch.uint8)
 
-def _label_connected_components_kornia(binary: torch.Tensor, max_labels: int = 10) -> torch.Tensor:
-        """
-        GPU-accelerated connected components via Kornia.
-        """
-        import kornia.contrib as km
-        # binary: [H, W], torch.float
-        # add batch & channel dims
-        comp = km.connected_components(binary.unsqueeze(0).unsqueeze(0).float())
-        # comp: [1,1,H,W] with labels 0...N
-        label_map = comp[0, 0].to(torch.int32)
-        # optional: clamp to max_labels
-        return torch.clamp(label_map, max=max_labels) # [0..max_labels]
+
+def _label_connected_components_kornia(binary: torch.Tensor, max_regions: int = 10, min_area: int = 10) -> list[torch.Tensor]:
+    """
+    GPU-accelerated connected components via Kornia.
+    Requires kornia.contrib.
+    Args:
+        binary: FloatTensor [H, W] of 0/1
+        max_regions: maximum number of regions to return
+        min_area: minimum area for a region to be considered
+    Returns:
+        list[torch.Tensor]: List of binary masks for the top-k regions
+    """
+
+    import kornia.contrib as km
+
+    comp = km.connected_components(binary.unsqueeze(0).unsqueeze(0).float())  # [1,1,H,W]
+    labels = comp[0, 0].to(torch.int32)
+    unique_labels = labels.unique()
+    unique_labels = unique_labels[unique_labels != 0]  # Remove background label (0)
+
+    regions = []
+    for lbl in unique_labels:
+        mask = (labels == lbl)
+        area = mask.sum().item()
+        if area >= min_area:
+            regions.append((area, mask))
+
+    # Order regions by area (descending)
+    regions.sort(key=lambda x: x[0], reverse=True)
+
+    # Return only the top-k regions
+    return [mask for _, mask in regions[:max_regions]]
+
 
 def _label_connected_components(binary: torch.Tensor, max_labels: int = 10) -> torch.Tensor:
     """
@@ -129,10 +150,10 @@ def _compute_region_stats(heatmap: torch.Tensor, region_mask: torch.Tensor,
 
 # Optimized feature extraction for multiregion attention maps
 def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: torch.device,
-                                              threshold = 'percentile', min_area_frac: float = 0.001,
-                                              max_regions_per_image: int = 5,
+                                              threshold = 'percentile', min_area_frac: float = 0.0005,
+                                              max_regions_per_image: int = 10,
                                               current_epoch = 10, max_epoch = 10,
-                                              max_q: float = 0.9, min_q: float = 0.7
+                                              max_q: float = 0.9, min_q: float = 0.5
                                               ) -> list[list[Tensor]]:
     """
     Optimized multiregion feature extraction with optional sign matching capability.
@@ -190,35 +211,27 @@ def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: t
     for i in range(batch):
         heatmap = normalized_maps[i] # Normalized heatmap [H, W]
         binary = _binarize_maps(heatmap, thresholds[i]) # Binary map [H, W]
+        min_area = round(min_area_frac * head * wei)  # Minimum area in pixels
+
         try:
-            labeled = _label_connected_components_kornia(binary, max_labels=10)  # Limit max regions
+            labeled = _label_connected_components_kornia(binary, max_regions=max_regions_per_image, min_area=min_area)
+            # Limit max regions
         except (RuntimeError, ModuleNotFoundError) as e:
             if print_msg:
                 print(f"[WARN] Error in connected components kornia labeling: {e},"
                   f" trying np version.")
             print_msg = False
-            labeled = _label_connected_components(binary, max_labels=10)
+            labeled = _label_connected_components(binary, max_labels=max_regions_per_image)
 
 
         # Extract stats for top regions by size
         regions = []
-        for lbl in range(1, labeled.max().item() + 1):
-            # Create a mask for the current region
-            mask = (labeled == lbl).float()
-            area = mask.sum().item()
-            if area < min_area_frac * head * wei:
-                continue
-
+        for idx, region_mask in enumerate(labeled):
             # Here stats are computed for each region
-            region_stats, area = _compute_region_stats(heatmap, mask)
+            region_stats, area = _compute_region_stats(heatmap, region_mask)
             regions.append((area,region_stats))
 
-        # Sort by area (descending) and take top K
-        if len(regions) > max_regions_per_image:
-            regions.sort(key=lambda x: x[0], reverse=True)
-            regions = regions[:max_regions_per_image] # Keep only top K regions
-
-        elif not regions:
+        if not regions:
             # Fallback to global stats
             # If no regions found, compute global stats
             mask = torch.ones_like(heatmap, dtype=torch.float32)
