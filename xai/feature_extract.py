@@ -404,9 +404,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
                         "label": sign_labels[most_similar_idx],
                         "stats": __from_tensor_to_dict(feature_tensor, stats_keys)
                     })
-    print(f"[INFO] Found signs in {batch_size} samples: {sum(len(v) for v in signs_found.values())} signs.")
-    for i in range(batch_size):
-        print(f"[INFO] Sample {i}: found {len(signs_found[i])} signs.")
+
     return graph, signs_found
 
 
@@ -514,20 +512,24 @@ def __softmax_weighted_update_signs(region_feat, sign_vecs, sign_ids, graph, sig
             report_entry = report.get(study_id, {})
             valid_sign_ids = [k for k, v in report_entry.items()
                               if k not in {"dicom_ids"} and v[1] is True]
-            vecs = [vec for sid, vec in zip(sign_ids, sign_vecs) if sid in valid_sign_ids]
+            filtered = [ (sid, vec, label)
+                        for sid, vec, label in zip(sign_ids, sign_vecs, sign_labels)
+                        if sid in valid_sign_ids ]
 
-            if valid_sign_ids and vecs:
-                # Filter sign_vecs and sign_ids based on valid_sign_ids
-                sign_vecs = torch.stack(vecs)  # [N_valid_signs, F]
-                sign_labels = [label for sid, label in zip(sign_ids, sign_labels) if sid in valid_sign_ids]
-                sign_ids = [sid for sid in sign_ids if sid in valid_sign_ids]
+            if filtered:
+                sign_ids, sign_vecs, sign_labels = zip(*filtered)
+                sign_vecs = torch.stack(sign_vecs)
+                sign_ids = list(sign_ids)
+                sign_labels = list(sign_labels)
 
+            # Any case: cache the sign vectors, labels and ids for TTL
             _FE_CACHE[study_id] = {
                 "sign_vecs": sign_vecs,
                 "sign_labels": sign_labels,
                 "sign_ids": sign_ids,
                 "ttl": n_features - 1
             }
+
         else:
             sign_vecs = _FE_CACHE[study_id]["sign_vecs"]
             sign_labels = _FE_CACHE[study_id]["sign_labels"]
