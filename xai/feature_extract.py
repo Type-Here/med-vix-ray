@@ -5,6 +5,9 @@ import torch
 import torch.nn.functional as fc
 from torch import Tensor
 
+from settings import NER_GROUND_TRUTH
+
+
 # ---- HELPER FUNCTIONS FOR FEATURE EXTRACTION ---- #
 
 def _binarize_maps(heatmap: torch.Tensor, threshold: float) -> torch.Tensor:
@@ -19,7 +22,8 @@ def _binarize_maps(heatmap: torch.Tensor, threshold: float) -> torch.Tensor:
     return (heatmap > threshold).to(torch.uint8)
 
 
-def _label_connected_components_kornia(binary: torch.Tensor, max_regions: int = 10, min_area: int = 10) -> list[torch.Tensor]:
+def _label_connected_components_kornia(binary: torch.Tensor, max_regions: int = 10, min_area: int = 10) -> list[
+    torch.Tensor]:
     """
     GPU-accelerated connected components via Kornia.
     Requires kornia.contrib.
@@ -81,7 +85,8 @@ def _label_connected_components(binary: torch.Tensor, max_labels: int = 10) -> t
         remaining = remaining * (1 - seed)
         label_id += 1
 
-    return label_map # [H, W] with labels 0..n
+    return label_map  # [H, W] with labels 0..n
+
 
 # --- REGION STATS COMPUTATION --- #
 
@@ -132,27 +137,27 @@ def _compute_region_stats(heatmap: torch.Tensor, region_mask: torch.Tensor,
     y_max, x_max = coords.max(dim=0)[0] / wei
     position = [x_min.item(), x_max.item(), y_min.item(), y_max.item()]
 
-
     # Create a single concatenated tensor with all features in order
     # returns Tensor[F] where F = 7 scalari + 4 position = 11
     return torch.cat([
-          mean_val.unsqueeze(0),
-          var_val.unsqueeze(0),
-          entropy.unsqueeze(0),
-          skewness.unsqueeze(0),
-          kurtosis.unsqueeze(0),
-          torch.tensor(active_dim, dtype=torch.float32, device=heatmap.device).unsqueeze(0),
-          fractal.unsqueeze(0),
-          torch.tensor(position, dtype=torch.float32, device=heatmap.device)
-      ]), area  # Return both stats and area
+        mean_val.unsqueeze(0),
+        var_val.unsqueeze(0),
+        entropy.unsqueeze(0),
+        skewness.unsqueeze(0),
+        kurtosis.unsqueeze(0),
+        torch.tensor(active_dim, dtype=torch.float32, device=heatmap.device).unsqueeze(0),
+        fractal.unsqueeze(0),
+        torch.tensor(position, dtype=torch.float32, device=heatmap.device)
+    ]), area  # Return both stats and area
+
 
 # ================== EXTRACTION FEATURES FUNCTIONS ================= #
 
 # Optimized feature extraction for multiregion attention maps
 def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: torch.device,
-                                              threshold = 'percentile', min_area_frac: float = 0.0005,
+                                              threshold='percentile', min_area_frac: float = 0.0005,
                                               max_regions_per_image: int = 10,
-                                              current_epoch = 10, max_epoch = 10,
+                                              current_epoch=10, max_epoch=10,
                                               max_q: float = 0.9, min_q: float = 0.5
                                               ) -> list[list[Tensor]]:
     """
@@ -209,8 +214,8 @@ def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: t
     print_msg = True
     # Process each image
     for i in range(batch):
-        heatmap = normalized_maps[i] # Normalized heatmap [H, W]
-        binary = _binarize_maps(heatmap, thresholds[i]) # Binary map [H, W]
+        heatmap = normalized_maps[i]  # Normalized heatmap [H, W]
+        binary = _binarize_maps(heatmap, thresholds[i])  # Binary map [H, W]
         min_area = round(min_area_frac * head * wei)  # Minimum area in pixels
 
         try:
@@ -219,17 +224,16 @@ def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: t
         except (RuntimeError, ModuleNotFoundError) as e:
             if print_msg:
                 print(f"[WARN] Error in connected components kornia labeling: {e},"
-                  f" trying np version.")
+                      f" trying np version.")
             print_msg = False
             labeled = _label_connected_components(binary, max_labels=max_regions_per_image)
-
 
         # Extract stats for top regions by size
         regions = []
         for idx, region_mask in enumerate(labeled):
             # Here stats are computed for each region
             region_stats, area = _compute_region_stats(heatmap, region_mask)
-            regions.append((area,region_stats))
+            regions.append((area, region_stats))
 
         if not regions:
             # Fallback to global stats
@@ -237,11 +241,11 @@ def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: t
             mask = torch.ones_like(heatmap, dtype=torch.float32)
             stats, area = _compute_region_stats(heatmap, mask)
             # Wrap in a list to match the expected output format
-            regions.append((area,stats))
+            regions.append((area, stats))
 
         return_features.append([x for _, x in regions])  # Extract only the stats
 
-    return return_features # list of B elements, each with a list of region features
+    return return_features  # list of B elements, each with a list of region features
 
 
 def __otsu_like_thresholds(batch, device, normalized_maps):
@@ -282,7 +286,8 @@ def _similarity_evaluation_single_node(node: dict, extracted_features_one_region
     Returns:
         float: Cosine similarity between stored and extracted features.
     """
-    keys = ["intensity", "variance", "entropy", "active_dim", "skewness", "kurtosis", "fractal", "position"]  # exclude 'position'
+    keys = ["intensity", "variance", "entropy", "active_dim", "skewness", "kurtosis", "fractal",
+            "position"]  # exclude 'position'
     stored_vec = torch.tensor([node["features"].get(k, 0.0) for k in keys], dtype=torch.float32)
 
     return __cosine_similarity_torch(stored_vec, extracted_features_one_region)
@@ -299,7 +304,8 @@ def __cosine_similarity_torch(vec1: torch.Tensor, vec2: torch.Tensor) -> float:
 # ---- UPDATE GRAPH USING MULTI-REGIO, MULTISIGNS EXTRACT FUNCTION ---- #
 
 def find_match_and_update_graph_features(graph, extracted_features, device, stats_keys=None,
-                                         update_features=True, is_inference=False):
+                                         update_features=True, is_inference=False,
+                                         use_softmax=False, softmax_params=None):
     """
     Updates the graph nodes (type="sign") with feature statistics from matched regions.
     Structure of signs_found is:
@@ -319,6 +325,8 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
         stats_keys (list of str, optional): Keys to update. Defaults to a standard set.
         update_features (bool): If True, update the graph features of the most similar node.
         is_inference (bool): If True, return detected signs per sample.
+        use_softmax (bool): If True, use probabilistic softmax-weighted assignment instead of most similar node.
+        softmax_params (dict, optional): Parameters for softmax assignment: temperature and top_k.
 
     Returns:
         tuple: Updated graph and a dictionary of found signs (if is_inference=True, otherwise None).
@@ -341,7 +349,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
         node.setdefault("count", 0)
 
         vec = torch.tensor([node["features"].get(k, 0.0) for k in stats_keys if k != "position"],
-                            device=device)
+                           device=device)
         # Add position as a separate feature
         pos = node["features"].get("position", [0.5, 0.5, 0.5, 0.5])
         pos_tensor = torch.tensor(pos, device=device)
@@ -355,29 +363,52 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
     sign_vecs = torch.stack(sign_vecs)  # [N_signs, F]
 
     for i, regions_list in enumerate(extracted_features):
+        n_features = len(regions_list)
         for feature_tensor in regions_list:
             # Calculate cosine similarity all at once
             sims = fc.cosine_similarity(feature_tensor.unsqueeze(0), sign_vecs, dim=1)
 
-            # Get the most similar sign
-            most_similar_idx = torch.argmax(sims).item()
-            matched_id = sign_ids[most_similar_idx]
-            node = next(n for n in graph["nodes"] if n["id"] == matched_id)
+            if use_softmax:
+                temperature = softmax_params.get("temperature", 0.5)
+                top_k = softmax_params.get("top_k", 2)
+                use_reports = softmax_params.get("use_reports", False)
+                study_ids = softmax_params.get("study_ids", None)
+                study_id = study_ids[i] if study_ids is not None and len(study_ids) > 0 else None
+                study_id = "s" + str(int(study_id.item()))
 
-            if update_features:  # In training mode
-                __update_most_similar_node(node, feature_tensor, stats_keys)
+                matched_signs = __softmax_weighted_update_signs(
+                    feature_tensor, sign_vecs, sign_ids, graph, sign_labels,
+                    stats_keys, device, n_features,
+                    update_features=update_features,
+                    is_inference=is_inference,
+                    temperature=temperature, top_k=top_k,
+                    use_reports=use_reports, study_id=study_id
+                )
+                if is_inference:
+                    signs_found[i].extend(matched_signs)
+            else:
+                # Get the most similar sign
+                most_similar_idx = torch.argmax(sims).item()
+                matched_id = sign_ids[most_similar_idx]
+                node = next(n for n in graph["nodes"] if n["id"] == matched_id)
 
-            if is_inference:  # In inference mode, store the results
-                if i not in signs_found:
-                    signs_found[i] = []
-                signs_found[i].append({
-                    "id": sign_ids[most_similar_idx],
-                    "similarity": sims[most_similar_idx].item(),
-                    "label": sign_labels[most_similar_idx],
-                    "stats": __from_tensor_to_dict(feature_tensor, stats_keys)
-                })
+                if update_features:  # In training mode
+                    __update_most_similar_node(node, feature_tensor, stats_keys)
 
+                if is_inference:  # In inference mode, store the results
+                    if i not in signs_found:
+                        signs_found[i] = []
+                    signs_found[i].append({
+                        "id": sign_ids[most_similar_idx],
+                        "similarity": sims[most_similar_idx].item(),
+                        "label": sign_labels[most_similar_idx],
+                        "stats": __from_tensor_to_dict(feature_tensor, stats_keys)
+                    })
+    print(f"[INFO] Found signs in {batch_size} samples: {sum(len(v) for v in signs_found.values())} signs.")
+    for i in range(batch_size):
+        print(f"[INFO] Sample {i}: found {len(signs_found[i])} signs.")
     return graph, signs_found
+
 
 def __from_tensor_to_dict(tensor, keys):
     """
@@ -397,6 +428,7 @@ def __from_tensor_to_dict(tensor, keys):
         else:
             dict_result[key] = tensor[i].item()
     return dict_result
+
 
 def __update_most_similar_node(node, feature_tensor, stats_keys):
     """
@@ -432,3 +464,101 @@ def __update_most_similar_node(node, feature_tensor, stats_keys):
                 node["features"][key] = (count * prev + new_val) / (count + 1)
 
     node["count"] += 1
+
+
+# ========================== COLD START: EXTRACT FROM REPORTS THE SIGNS ========================== #
+
+# ------------------------- SOFTMAX ASSIGNMENT BASED ON COSINE SIMILARITY ----------------------- #
+
+_FE_CACHE = {}
+
+def __softmax_weighted_update_signs(region_feat, sign_vecs, sign_ids, graph, sign_labels,
+                                    stats_keys, device, n_features, update_features=True, is_inference=False,
+                                    temperature=0.5, top_k=2, use_reports=False, study_id=None):
+    """
+        Uses **probabilistic softmax** to assign region features to sign nodes based on cosine similarity.
+
+        Args:
+            region_feat (Tensor): feature tensor of the region to match. Shape [F].
+            sign_vecs (Tensor): tensor of sign vectors to match against, shape [N_signs, F]. From graph nodes.
+            sign_ids (list): list of sign IDs corresponding to sign_vecs.
+            graph (dict): graph structure containing nodes.
+            sign_labels (list): list of sign labels corresponding to sign_vecs.
+            stats_keys (list of str): keys to update in the graph node features.
+            device (torch.device): device for tensor operations.
+            n_features (int): number of features in the region_feat tensor.
+            update_features (bool): if True, update the graph node features of the most similar node.
+            is_inference (bool): if True, return detected signs for inference, else update graph.
+            temperature (float): softmax temperature for scaling similarities.
+            top_k (int): maximum number of top nodes to consider for each region.
+
+        Returns:
+            list of dicts with detected signs (if is_inference=True), else empty list.
+        """
+
+    detected_signs = []
+    # Ensure region_feat is on the correct device
+    region_feat = region_feat.to(device)
+
+    # Remove from sign_vecs the nodes that are not in the reports
+    if use_reports and study_id is not None:
+        if "report" not in _FE_CACHE:
+            import json
+            report = json.loads(open(NER_GROUND_TRUTH, "r").read())
+            _FE_CACHE["report"] = report
+        else:
+            report = _FE_CACHE["report"]
+
+        if study_id not in _FE_CACHE:
+            # Get keys for the current study_id and remove dicom_id key if present
+            report_entry = report.get(study_id, {})
+            valid_sign_ids = [k for k, v in report_entry.items()
+                              if k not in {"dicom_ids"} and v[1] is True]
+            vecs = [vec for sid, vec in zip(sign_ids, sign_vecs) if sid in valid_sign_ids]
+
+            if valid_sign_ids and vecs:
+                # Filter sign_vecs and sign_ids based on valid_sign_ids
+                sign_vecs = torch.stack(vecs)  # [N_valid_signs, F]
+                sign_labels = [label for sid, label in zip(sign_ids, sign_labels) if sid in valid_sign_ids]
+                sign_ids = [sid for sid in sign_ids if sid in valid_sign_ids]
+
+            _FE_CACHE[study_id] = {
+                "sign_vecs": sign_vecs,
+                "sign_labels": sign_labels,
+                "sign_ids": sign_ids,
+                "ttl": n_features - 1
+            }
+        else:
+            sign_vecs = _FE_CACHE[study_id]["sign_vecs"]
+            sign_labels = _FE_CACHE[study_id]["sign_labels"]
+            sign_ids = _FE_CACHE[study_id]["sign_ids"]
+            _FE_CACHE[study_id]["ttl"] -= 1
+            if _FE_CACHE[study_id]["ttl"] <= 0:
+                del _FE_CACHE[study_id]
+
+    # Compute cosine similarity between region features and sign vectors
+    sims = fc.cosine_similarity(region_feat.unsqueeze(0), sign_vecs, dim=1)  # [N_signs]
+    # Apply softmax to the similarities
+    probs = fc.softmax(sims / temperature, dim=0)
+    # Get the top-k indices and probabilities
+    topk_probs, topk_indices = torch.topk(probs, min(top_k, len(probs)))
+
+    # For each of the top-k indices, update the graph node features
+    for j, idx in enumerate(topk_indices):
+        node_id = sign_ids[idx]
+        node = next(n for n in graph["nodes"] if n["id"] == node_id)
+        weight = topk_probs[j].item()
+
+        if update_features:
+            weighted_feat = region_feat * weight
+            __update_most_similar_node(node, weighted_feat, stats_keys)
+
+        if is_inference:
+            detected_signs.append({
+                "id": node_id,
+                "similarity": sims[idx].item(),
+                "label": sign_labels[idx],
+                "stats": __from_tensor_to_dict(region_feat, stats_keys)
+            })
+
+    return detected_signs
