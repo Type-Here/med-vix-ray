@@ -368,13 +368,18 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
             # Calculate cosine similarity all at once
             sims = fc.cosine_similarity(feature_tensor.unsqueeze(0), sign_vecs, dim=1)
 
-            if use_softmax:
+            if use_softmax and softmax_params is not None:
                 temperature = softmax_params.get("temperature", 0.5)
                 top_k = softmax_params.get("top_k", 2)
                 use_reports = softmax_params.get("use_reports", False)
                 study_ids = softmax_params.get("study_ids", None)
-                study_id = study_ids[i] if study_ids is not None and len(study_ids) > 0 else None
-                study_id = "s" + str(int(study_id.item()))
+                try:
+                    if hasattr(study_ids[i], 'item'):
+                        study_id = "s" + str(int(study_ids[i].item()))
+                    else:
+                        study_id = "s" + str(int(study_ids[i]))
+                except (TypeError, ValueError, IndexError):
+                    study_id = None
 
                 matched_signs = __softmax_weighted_update_signs(
                     feature_tensor, sign_vecs, sign_ids, graph, sign_labels,

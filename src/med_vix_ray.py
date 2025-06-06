@@ -953,7 +953,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 optimizer.zero_grad()
                 images = images.to(self.device)
                 labels = labels.to(self.device)
-                #study_ids = study_ids.to(self.device)
+                study_ids = study_ids.to(self.device)
 
                 # Reset the classifier gradient to None before each batch.
                 self.classifier_grad = None
