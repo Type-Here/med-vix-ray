@@ -92,17 +92,17 @@
         "id": "20",
         "label": "Opacity",
         "description": "Opacity refers to an area that appears denser than normal on an X-ray.",
-        "synonyms": ["radiopacity", "radiodensity", "radiodense"],
+        "synonyms": ["radiopacity", "radiodensity", "radiodense", "opacified", "opacified region", "hilar fullness", "fullness"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.6,
+          "variance": 0.05,
+          "entropy": 0.8,
+          "active_dim" : 0.3,
+          "skewness": 0.3,
+          "kurtosis": 3.0,
+          "fractal": 1.3,
+          "position" : [0.2,0.8,0.3,0.7]
         }
       },
       {
@@ -112,14 +112,14 @@
         "synonyms": ["veil opacity"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.4,
+          "variance": 0.02,
+          "entropy": 0.6,
+          "active_dim" : 0.5,
+          "skewness": -0.2,
+          "kurtosis": 2.5,
+          "fractal": 1.1,
+          "position" : [0.1, 0.9, 0.2, 0.8]
         }
       },
       {
@@ -129,14 +129,14 @@
         "synonyms": ["air crescent", "air crescent sign", "air-sickel", "air sickle", "air sichel"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.3,
+          "variance": 0.01,
+          "entropy": 0.7,
+          "active_dim" : 0.15,
+          "skewness": -0.4,
+          "kurtosis": 3.5,
+          "fractal": 1.2,
+          "position" : [0.1, 0.4, 0.1, 0.3]
         }
       },
       {
@@ -146,14 +146,14 @@
         "synonyms": ["reverse S sign", "Golden sign", "Golden"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.5,
+          "variance": 0.025,
+          "entropy": 0.7,
+          "active_dim": 0.20,
+          "skewness": -0.2,
+          "kurtosis": 3.2,
+          "fractal": 1.3,
+          "position": [0.15, 0.55, 0.2, 0.6]
         }
       },
       {
@@ -163,14 +163,14 @@
         "synonyms": ["juxtaphrenic peak", "juxtaphrenic peak sign", "peak sign"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.65,
+          "variance": 0.03,
+          "entropy": 0.75,
+          "active_dim": 0.25,
+          "skewness": 0.1,
+          "kurtosis": 3.0,
+          "fractal": 1.3,
+          "position": [0.6, 0.8, 0.8, 1.0]
         }
       },
       {
@@ -180,15 +180,15 @@
         "synonyms": ["lobar collapse", "lobar atelectasis"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
-        }
+          "intensity": 0.7,
+          "variance": 0.04,
+          "entropy": 0.9,
+          "active_dim": 0.35,
+          "skewness": 0.2,
+          "kurtosis": 3.0,
+          "fractal": 1.4,
+          "position": [0.2, 0.8, 0.3, 0.7]
+         }
       },
       {
         "id": "26",
@@ -197,14 +197,14 @@
         "synonyms": ["air bronchogram", "air bronchogram sign"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.68,
+          "variance": 0.045,
+          "entropy": 0.85,
+          "active_dim": 0.25,
+          "skewness": -0.25,
+          "kurtosis": 3.2,
+          "fractal": 1.4,
+          "position": [0.25, 0.75, 0.35, 0.65]
         }
       },
       {
@@ -214,14 +214,14 @@
         "synonyms": ["ground-glass opacity", "ground glass opacity", "ground glass", "dark bronchogram", "veil-like opacity"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.55,
+          "variance": 0.02,
+          "entropy": 0.65,
+          "active_dim": 0.40,
+          "skewness": 0.0,
+          "kurtosis": 2.5,
+          "fractal": 1.2,
+          "position": [0.15, 0.85, 0.15, 0.85]
         }
       },
       {
@@ -231,31 +231,31 @@
         "synonyms": ["septal thickening", "interlobular septal thickening", "crazy paving"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.5,
+          "variance": 0.015,
+          "entropy": 0.6,
+          "active_dim": 0.10,
+          "skewness": 0.0,
+          "kurtosis": 2.8,
+          "fractal": 1.1,
+          "position": [0.2, 0.8, 0.2, 0.8]
         }
       },
       {
         "id": "29",
         "label": "Kerley B lines",
-        "description": "Kerley B lines are thin, horizontal lines seen on chest X-rays, often representing interstitial edema in the lungs or congestive heart failure. They are perpendicular to the pleural surface and extend out to it.",
-        "synonyms": ["kerley B lines", "b lines"],
+        "description": "Kerley B lines are thin, horizontal lines seen on chest X-rays, often representing interstitial edema in the lungs or congestive heart failure. They are perpendicular to the pleural surface and extend out to it. Added vascular congestion as synonym being correlated with the sign.",
+        "synonyms": ["kerley B lines", "b lines", "vascular congestion", "pulmonary congestion"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.45,
+          "variance": 0.01,
+          "entropy": 0.55,
+          "active_dim": 0.03,
+          "skewness": 0.0,
+          "kurtosis": 2.5,
+          "fractal": 1.1,
+          "position": [0.75, 0.80, 0.85, 0.90]
         }
       },
       {
@@ -265,31 +265,31 @@
         "synonyms": ["kerley A lines", "a lines"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.5,
+          "variance": 0.02,
+          "entropy": 0.65,
+          "active_dim": 0.07,
+          "skewness": 0.0,
+          "kurtosis": 3.0,
+          "fractal": 1.1,
+          "position": [0.15, 0.25, 0.05, 0.15]
         }
       },
       {
         "id": "31",
         "label": "flattening of the diaphragms",
         "description": "Flattening of the diaphragms is a radiological sign characterized by the flattening or bulging of the diaphragm, often seen in cases of emphysema or chronic obstructive pulmonary disease (COPD).",
-        "synonyms": ["flattening of the diaphragm", "diaphragm flattening", "flattened diaphragm"],
+        "synonyms": ["flattening of the diaphragm", "diaphragm flattening", "flattened diaphragm", "flattened hemidiaphragm"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.4,
+          "variance": 0.01,
+          "entropy": 0.55,
+          "active_dim": 0.30,
+          "skewness": 0.0,
+          "kurtosis": 2.5,
+          "fractal": 1.0,
+          "position": [0.1, 0.9, 0.9, 0.95]
         }
       },
       {
@@ -299,14 +299,14 @@
         "synonyms": ["pulmonary emphysema", "lung emphysema"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.3,
+          "variance": 0.015,
+          "entropy": 0.6,
+          "active_dim": 0.35,
+          "skewness": -0.3,
+          "kurtosis": 2.8,
+          "fractal": 1.1,
+          "position": [0.1, 0.9, 0.1, 0.5]
         }
       },
       {
@@ -316,14 +316,14 @@
         "synonyms": ["pleural thickening", "pleural disease", "absestosis", "pleural opacity"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.55,
+          "variance": 0.012,
+          "entropy": 0.6,
+          "active_dim": 0.05,
+          "skewness": 0.0,
+          "kurtosis": 2.5,
+          "fractal": 1.1,
+          "position": [0.85, 0.90, 0.1, 0.9]
         }
       },
       {
@@ -333,14 +333,14 @@
         "synonyms": ["central density", "central opacity"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.35,
+          "variance": 0.02,
+          "entropy": 0.65,
+          "active_dim": 0.20,
+          "skewness": -0.3,
+          "kurtosis": 3.0,
+          "fractal": 1.3,
+          "position": [0.35, 0.65, 0.35, 0.65]
         }
       },
       {
@@ -350,14 +350,14 @@
         "synonyms": ["tracheal shift", "tracheal deviation", "tracheal displacement"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.5,
+          "variance": 0.02,
+          "entropy": 0.65,
+          "active_dim": 0.15,
+          "skewness": 0.0,
+          "kurtosis": 3.0,
+          "fractal": 1.1,
+          "position": [0.3, 0.4, 0.4, 0.6]
         }
       },
       {
@@ -367,65 +367,65 @@
         "synonyms": ["gynecomastia", "breast enlargement"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.6,
+          "variance": 0.02,
+          "entropy": 0.65,
+          "active_dim": 0.20,
+          "skewness": 0.0,
+          "kurtosis": 3.0,
+          "fractal": 1.1,
+          "position": [0.25, 0.75, 0.1, 0.3]
         }
       },
       {
         "id": "37",
         "label": "Cardiac Silhouette",
         "description": "Cardiac silhouette refers to the outline of the heart as seen on a chest X-ray.",
-        "synonyms": ["cardiac silhouette", "heart silhouette"],
+        "synonyms": ["cardiac silhouette", "heart silhouette", "cardiomediastinal silhouette", "cardiac contour", "cardio-mediastinic silhouette", "heart size"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.7,
+          "variance": 0.03,
+          "entropy": 0.7,
+          "active_dim": 0.40,
+          "skewness": 0.0,
+          "kurtosis": 3.0,
+          "fractal": 1.2,
+          "position": [0.3, 0.7, 0.5, 0.8]
         }
       },
       {
         "id": "38",
         "label": "Calcification",
         "description": "Calcification refers to the deposition of calcium salts in tissues, often seen in various conditions.",
-        "synonyms": ["calcification", "calcified lesion"],
+        "synonyms": ["calcification", "calcified lesion", "calcified"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.8,
+          "variance": 0.03,
+          "entropy": 0.6,
+          "active_dim": 0.05,
+          "skewness": 0.3,
+          "kurtosis": 3.5,
+          "fractal": 1.1,
+          "position": [0.7, 0.8, 0.2, 0.3]
         }
       },
       {
         "id": "39",
         "label": "Displaced Bone",
         "description": "Displaced bone refers to a fracture in which the bone ends are not aligned properly.",
-        "synonyms": ["displaced bone", "displaced fracture"],
+        "synonyms": ["displaced bone", "displaced fracture", "rib deformity", "rib displacement"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.85,
+          "variance": 0.04,
+          "entropy": 0.7,
+          "active_dim": 0.1,
+          "skewness": 0.0,
+          "kurtosis": 3.2,
+          "fractal": 1.3,
+          "position": [0.4, 0.8, 0.2, 0.5]
         }
       },
       {
@@ -435,14 +435,14 @@
         "synonyms": ["bone fragment", "bone chip"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.8,
+          "variance": 0.05,
+          "entropy": 0.75,
+          "active_dim": 0.04,
+          "skewness": 0.0,
+          "kurtosis": 3.5,
+          "fractal": 1.5,
+          "position": [0.5, 0.6, 0.4, 0.5]
         }
       },
       {
@@ -452,14 +452,14 @@
         "synonyms": ["bone density", "bone mass"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.65,
+          "variance": 0.06,
+          "entropy": 0.7,
+          "active_dim": 0.25,
+          "skewness": 0.0,
+          "kurtosis": 3.0,
+          "fractal": 1.2,
+          "position": [0.1, 0.9, 0.1, 0.8]
         }
       },
       {
@@ -469,65 +469,65 @@
         "synonyms": ["bone interruption", "bone break"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.7,
+          "variance": 0.05,
+          "entropy": 0.75,
+          "active_dim": 0.1,
+          "skewness": 0.2,
+          "kurtosis": 3.5,
+          "fractal": 1.4,
+          "position": [0.3, 0.7, 0.3, 0.7]
         }
       },
       {
         "id": "43",
         "label": "Nodular Opacity",
         "description": "Nodular opacity refers to a small, rounded area of increased density on an X-ray, often indicating a nodule or mass.",
-        "synonyms": ["nodular opacity", "nodular lesion"],
+        "synonyms": ["nodular opacity", "nodular lesion", "nodules", "nodule"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.65,
+          "variance": 0.04,
+          "entropy": 0.7,
+          "active_dim": 0.08,
+          "skewness": 0.0,
+          "kurtosis": 3.2,
+          "fractal": 1.2,
+          "position": [0.4, 0.5, 0.4, 0.5]
         }
       },
       {
         "id": "44",
         "label": "Cavitation",
         "description": "Cavitation refers to the formation of a cavity or hollow space within a solid object, often seen in lung lesions.",
-        "synonyms": ["cavitation", "cavitary lesion"],
+        "synonyms": ["cavitation", "cavitary lesion", "cavity"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.3,
+          "variance": 0.03,
+          "entropy": 0.65,
+          "active_dim": 0.18,
+          "skewness": -0.35,
+          "kurtosis": 3.0,
+          "fractal": 1.3,
+          "position": [0.35, 0.65, 0.35, 0.65]
         }
       },
       {
         "id": "45",
         "label": "Mass",
         "description": "Pleural mass refers to a localized area of abnormal tissue in the pleura, the membrane surrounding the lungs.",
-        "synonyms": ["pleural mass", "pleural tumor"],
+        "synonyms": ["pleural mass", "pleural tumor", "lesion", "full mass"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.75,
+          "variance": 0.05,
+          "entropy": 0.7,
+          "active_dim": 0.3,
+          "skewness": 0.0,
+          "kurtosis": 3.5,
+          "fractal": 1.3,
+          "position": [0.3, 0.7, 0.3, 0.7]
         }
       },
       {
@@ -537,14 +537,14 @@
         "synonyms": ["cloudy opacity", "hazy opacity", "cloud-like opacity", "fluffy opacity"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.6,
+          "variance": 0.04,
+          "entropy": 0.75,
+          "active_dim": 0.35,
+          "skewness": 0.1,
+          "kurtosis": 3.2,
+          "fractal": 1.2,
+          "position": [0.2, 0.8, 0.2, 0.8]
         }
       },
       {
@@ -554,14 +554,14 @@
         "synonyms": ["lobar sign", "lobar pneumonia", "lobar opacity"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.75,
+          "variance": 0.05,
+          "entropy": 0.8,
+          "active_dim": 0.40,
+          "skewness": 0.0,
+          "kurtosis": 3.5,
+          "fractal": 1.3,
+          "position": [0.1, 0.9, 0.2, 0.8]
         }
       },
       {
@@ -571,14 +571,14 @@
         "synonyms": ["radiotranslucent", "radiolucent", "radiotransparent", "radiolucency"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.25,
+          "variance": 0.01,
+          "entropy": 0.5,
+          "active_dim": 0.1,
+          "skewness": -0.2,
+          "kurtosis": 2.8,
+          "fractal": 1.0,
+          "position": [0.3, 0.7, 0.2, 0.5]
         }
       },
       {
@@ -588,14 +588,14 @@
         "synonyms": ["pleural line", "pleural interface"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.55,
+          "variance": 0.01,
+          "entropy": 0.6,
+          "active_dim": 0.05,
+          "skewness": 0.0,
+          "kurtosis": 2.5,
+          "fractal": 1.0,
+          "position": [0.1, 0.9, 0.5, 0.55]
         }
       },
       {
@@ -605,14 +605,14 @@
         "synonyms": ["deep sulcus sign", "deep costophrenic angle"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.2,
+          "variance": 0.01,
+          "entropy": 0.5,
+          "active_dim": 0.15,
+          "skewness": -0.2,
+          "kurtosis": 2.8,
+          "fractal": 1.1,
+          "position": [0.75, 0.95, 0.7, 0.9]
         }
       },
       {
@@ -622,14 +622,14 @@
         "synonyms": ["pericardial fat sign", "pericardial fat pad"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.4,
+          "variance": 0.02,
+          "entropy": 0.55,
+          "active_dim": 0.15,
+          "skewness": 0.0,
+          "kurtosis": 2.7,
+          "fractal": 1.0,
+          "position": [0.2, 0.8, 0.2, 0.5]
         }
       },
       {
@@ -639,48 +639,48 @@
         "synonyms": ["extraneous material", "foreign body", "foreign object"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
-        }
+            "intensity": 0.7,
+            "variance": 0.08,
+            "entropy": 0.6,
+            "active_dim": 0.1,
+            "skewness": 0.4,
+            "kurtosis": 3.5,
+            "fractal": 1.4,
+            "position": [0.1, 0.8, 0.1, 0.8]
+          }
       },
       {
         "id": "53",
         "label": "metallic foreign body",
         "description": "Metallic foreign body refers to any metallic object that is not part of the normal anatomy and is present in the body.",
-        "synonyms": ["metallic foreign body", "metallic object", "metallic fragment"],
+        "synonyms": ["metallic foreign body", "metallic object", "metallic fragment", "EKG leads", "EKG wires", "EKG electrodes", "ECG leads", "ECG wires", "ECG electrodes", "surgical clips" ],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.95,
+          "variance": 0.02,
+          "entropy": 0.55,
+          "active_dim": 0.05,
+          "skewness": 0.0,
+          "kurtosis": 4.0,
+          "fractal": 1.1,
+          "position": [0.1, 0.8, 0.1, 0.8]
         }
       },
       {
         "id": "54",
-        "label": "drainage tube",
-        "description": "Drainage tube refers to a tube used to remove fluid or air from the body.",
-        "synonyms": ["drainage tube", "drain tube", "drain"],
+        "label": "tube",
+        "description": "Tube refers to all medical tubes used to remove fluid or air from the body. In this category: intubation, nasogastric, drainage, catheretization tube.",
+        "synonyms": ["drainage tube", "drain tube", "drain", "intubation tube", "intubation", "catheter", "catheterization", "Nasogastric tube"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.75,
+          "variance": 0.08,
+          "entropy": 0.65,
+          "active_dim": 0.20,
+          "skewness": 0.3,
+          "kurtosis": 3.5,
+          "fractal": 1.1,
+          "position": [0.1, 0.9, 0.2, 0.7]
         }
       },
       {
@@ -690,14 +690,14 @@
         "synonyms": ["hematoma", "blood clot", "blood collection"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.6,
+          "variance": 0.08,
+          "entropy": 0.75,
+          "active_dim": 0.12,
+          "skewness": 0.2,
+          "kurtosis": 3.7,
+          "fractal": 1.4,
+          "position": [0.35, 0.65, 0.55, 0.75]
         }
       },
       {
@@ -707,14 +707,14 @@
         "synonyms": ["fibrosis", "scar tissue", "fibrotic tissue", "cicatrix", "cicatricial tissue"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.55,
+          "variance": 0.06,
+          "entropy": 0.7,
+          "active_dim": 0.25,
+          "skewness": 0.1,
+          "kurtosis": 3.0,
+          "fractal": 1.3,
+          "position": [0.1, 0.9, 0.1, 0.9]
         }
       },
       {
@@ -724,14 +724,14 @@
         "synonyms": ["cardiac chamber enlargement", "heart chamber enlargement", "enlargement of cardiac silhouette"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.67,
+          "variance": 0.04,
+          "entropy": 0.7,
+          "active_dim": 0.35,
+          "skewness": 0.1,
+          "kurtosis": 3.0,
+          "fractal": 1.2,
+          "position": [0.3, 0.7, 0.47, 0.85]
         }
       },
       {
@@ -741,14 +741,14 @@
         "synonyms": ["bronchiectasis", "bronchial dilation"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.6,
+          "variance": 0.07,
+          "entropy": 0.8,
+          "active_dim": 0.15,
+          "skewness": 0.1,
+          "kurtosis": 3.3,
+          "fractal": 1.4,
+          "position": [0.2, 0.8, 0.2, 0.8]
         }
       },
       {
@@ -758,14 +758,14 @@
         "synonyms": ["normal", "healthy"],
         "type": "sign",
         "features": {
-          "intensity": null,
-          "variance": null,
-          "entropy": null,
-          "active_dim" : null,
-          "skewness": null,
-          "kurtosis": null,
-          "fractal": null,
-          "position" : [0,0,0,0]
+          "intensity": 0.5,
+          "variance": 0.02,
+          "entropy": 0.5,
+          "active_dim": 0.05,
+          "skewness": 0.0,
+          "kurtosis": 2.5,
+          "fractal": 1.0,
+          "position": [0.0, 1.0, 0.0, 1.0]
         }
       }
 

@@ -3,7 +3,7 @@ import os
 from torch.utils.data import DataLoader
 
 import dataset.dataset_handle as dh
-from settings import DOWNLOADED_FILES, DATASET_PATH, MIMIC_LABELS, NUM_WORKERS
+from settings import NUM_WORKERS, BATCH_SIZE
 from src.preprocess import ImagePreprocessor
 
 """
@@ -24,7 +24,7 @@ def menu():
     return choice
 
 
-def model_option(model_path, model_obj):
+def basic_menu_model_option(model_path, model_obj):
     """
     Check if a model exists at the specified path. If it does, prompt the user to load it or train a new one.
     If the model does not exist, prompt the user to train a new one.
@@ -50,108 +50,214 @@ def model_option(model_path, model_obj):
         print("Model not found. Training a new model.")
         return True
 
-# ======= STANDARD OPERATIONS TO GET TRAINING AND VALIDATION DATASET AND LABELS =======
-
-def _load_train_val_sets():
-    """
-    Load the training and validation datasets.
-    If they do not exist, create them using dataset_handle.load_ready_dataset function.
-    Returns:
-        tuple(pd.DataFrame, pd.DataFrame): The training and validation datasets.
-    """
-    # Load dataset
-    try:
-        train_dataset = dh.load_ready_dataset(phase='train')
-    except FileNotFoundError:
-        print("Train dataset not found. Creating a new one.")
-        merged_data = dh.dataset_handle(partial_list=DOWNLOADED_FILES)
-        train_dataset, _, _ = dh.split_dataset(merged_data)
-
-    try:
-        validation_dataset = dh.load_ready_dataset(phase='validation')
-    except FileNotFoundError:
-        print("Validation dataset not found. Since Train dataset was created or loaded \n"
-              " there should be a validation dataset too.")
-        print("Check the dataset folder or code.")
-        exit(1)
-
-    print("Train and Validation information dataset loaded.")
-    return train_dataset, validation_dataset
-
-
-def _get_image_paths_from_csv(train_dataset=None, validation_dataset=None):
-    """
-    Fetch image paths from the CSV files for training and validation datasets.
-    Note: if the dataset is not provided, it will return None in the tuple
-    Args:
-        train_dataset (pd.DataFrame): The training dataset.
-        validation_dataset (pd.DataFrame): The validation dataset.
-    Returns:
-        tuple(list, list): The training and validation image paths.
-    """
-    train_image_paths, validation_image_paths = None, None
-    if train_dataset is not None:
-        train_image_paths = dh.fetch_image_from_csv(train_dataset, DATASET_PATH)
-    if validation_dataset is not None:
-        validation_image_paths = dh.fetch_image_from_csv(validation_dataset, DATASET_PATH)
-
-    return train_image_paths, validation_image_paths
-
-
-def _get_train_val_labels(train_dataset=None, validation_dataset=None):
-    """
-    Fetch labels from pd.DataFrame for training and validation datasets.
-    Note: if the dataset is not provided, it will return None in the tuple
-    Args:
-        train_dataset (pd.DataFrame): The training dataset.
-        validation_dataset (pd.DataFrame): The validation dataset.
-    Returns:
-        tuple(dict, dict): The training and validation labels.
-    """
-    train_labels, val_labels = None, None
-    # Convert labels to dictionary
-    if train_dataset is not None:
-        train_labels = {train_dataset['dicom_id'][i]: train_dataset[MIMIC_LABELS].iloc[i].tolist()
-                        for i in range(len(train_dataset))}
-    if validation_dataset is not None:
-        val_labels = {validation_dataset['dicom_id'][i]: validation_dataset[MIMIC_LABELS].iloc[i].tolist()
-                      for i in range(len(validation_dataset))}
-    return train_labels, val_labels
-
 
 # =============================== MAIN CALLING FUNCTION TO GET DIRECTLY THE DATALOADERS ===============================
 
 
-def get_dataloaders():
+def get_dataloaders(return_study_id=False, pin_memory=False,
+                    return_train_loader=True, return_val_loader=True,
+                    full_data=False, verify_existence=False, use_bucket=False, channels_mode="RGB"):
     """
         Get the training and validation dataloaders.
 
         This function loads the datasets, fetches the image paths and labels and creates the dataloaders.
         Datasets are the same for every model, using settings.py variables to get the paths.
 
-        The dataloaders are created using the ImagePreprocessor class for preprocessing images.
+        Note:
+
+        -If return_train_loader or return_val_loader is set to False,
+        the function will return None for that dataloader but a tuple is always returned.
+
+        -When all_data is set to True, the function will load the entire dataset using mimic Physionet division csv info.
+        The directory for the dataset is set to MIMIC_SPLIT_DIR in settings.py.
+
+        -The dataloaders are created using the ImagePreprocessor class for preprocessing images.
+        Args:
+            return_study_id (bool): If True, the dataloader will return the study_id
+            along with the image and label in the tuple.
+
+            pin_memory (bool): If True, the dataloader will use pinned memory for faster data transfer to GPU.
+
+            return_train_loader (bool): If True, the dataloader will return the training dataloader.
+
+            return_val_loader (bool): If True, the dataloader will return the validation dataloader.
+
+            full_data (bool): If True, the function will load the entire dataset using mimic physionet division csv info.
+
+            use_bucket (bool): If True, the function will use the bucketed dataset in Dataloader.
+            It will change the image_dir path to use a FUSE mounted bucket.
+
+            verify_existence (bool): If True, the function will check if the image paths
+            exist while fetching paths from csv. (Only for non bucketed dataset)
+            
+            channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
 
         Returns:
-            tuple: (DataLoader, DataLoader) for training and validation datasets.
+            tuple[DataLoader, DataLoader] for training and validation datasets.
     """
-    # Load the dataset with partially downloaded files
-    train_dataset, validation_dataset = _load_train_val_sets()
-    print("Train and Validation datasets loaded.")
+    if use_bucket and not full_data:
+        print("[WARNING] Using bucketed dataset with partial data.")
 
-    # Obtain Paths
-    train_image_paths, val_image_paths = _get_image_paths_from_csv(train_dataset, validation_dataset)
-    if len(train_image_paths) == 0 or len(val_image_paths) == 0:
-        print("No images found in the dataset. Check the dataset folder or code.")
-        exit(1)
+    if use_bucket and verify_existence:
+        print("[WARNING] Using bucketed dataset with verify_existence=True. "
+              "This will not work as the image paths are not verified in the bucket.")
+        verify_existence = False
 
-    # Obtain Labels
-    train_labels, val_labels = _get_train_val_labels(train_dataset, validation_dataset)
-    print("Train and Validation labels loaded.")
+    print("\n ------------------- ")
+    print("[INFO] Loading dataset(s) metadata...")
 
-    # Obtain Dataloaders in order to improve performance
-    training_loader = DataLoader(ImagePreprocessor(train_image_paths, train_labels, channels_mode="L"),
-                                 batch_size=16, shuffle=True, num_workers=NUM_WORKERS)
-    valid_loader = DataLoader(ImagePreprocessor(val_image_paths, val_labels, channels_mode="L"),
-                              batch_size=16, shuffle=False, num_workers=NUM_WORKERS)
+    training_loader, valid_loader = None, None
+    if return_train_loader:
+        print("[INFO] Fetching training metadata...")
+        train_metadata = dh.fetch_metadata(phase='train',
+                                           full_data=full_data,
+                                           verify_existence=verify_existence)
+        if len(train_metadata) == 0:
+            print("[ERROR] No images found in the dataset for Training. "
+                  "Check the dataset folder or code.")
+            exit(1)
+
+        print(" - Train metadata size:", len(train_metadata))
+        print(" - Creating training dataloader...")
+        training_loader = DataLoader(ImagePreprocessor
+                                     (train_metadata,
+                                      channels_mode=channels_mode,
+                                      return_study_id=return_study_id,
+                                      use_bucket=use_bucket,
+                                      augment=True,
+                                      is_training=True),
+                                 batch_size=BATCH_SIZE, shuffle=True,
+                                 num_workers=NUM_WORKERS,
+                                 pin_memory=pin_memory)
+
+    if return_val_loader:
+        print("[INFO] Fetching validation metadata...")
+        val_metadata = dh.fetch_metadata(phase='val',
+                                         full_data=full_data,
+                                         verify_existence=verify_existence)
+        if len(val_metadata) == 0:
+            print("[ERROR] No images found in the dataset for Validation. "
+                  "Check the dataset folder or code.")
+            exit(1)
+
+        print(" - Validation metadata size:", len(val_metadata))
+        print(" - Creating validation dataloader...")
+        valid_loader = DataLoader(ImagePreprocessor
+                                  (val_metadata,
+                                   channels_mode=channels_mode,
+                                   return_study_id=False,
+                                   use_bucket=use_bucket),
+                              batch_size=BATCH_SIZE, shuffle=False,
+                              num_workers=NUM_WORKERS,
+                              pin_memory=pin_memory)
 
     return training_loader, valid_loader
+
+
+def get_test_dataloader( pin_memory=False,
+                         full_data=False, verify_existence=False, use_bucket=False, channels_mode="RGB"):
+    """
+        Get the test dataloader.
+
+        This function loads the test dataset, fetches the image paths and labels and creates the dataloader.
+        The dataset is the same for every model, using settings.py variables to get the paths.
+        Channels mode is present to allow for RGB or grayscale images so also baseline models can be used.
+        Args:
+            channels_mode (str): Color mode of the image. Default is "RGB". Accepts "RGB" or "L" (grayscale).
+
+            pin_memory (bool): If True, the dataloader will use pinned memory for faster data transfer to GPU.
+
+            full_data (bool): If True, the function will load the entire dataset using mimic physionet division csv info.
+
+            use_bucket (bool): If True, the function will use the bucketed dataset in Dataloader.
+            It will change the image_dir path to use a FUSE mounted bucket.
+
+            verify_existence (bool): If True, the function will check if the image paths
+            exist while fetching paths from csv. (Only for non bucketed dataset)
+
+        Returns:
+            DataLoader for test dataset.
+    """
+    if use_bucket and not full_data:
+        print("[WARNING] Using bucketed dataset with partial data.")
+
+    if use_bucket and verify_existence:
+        print("[WARNING] Using bucketed dataset with verify_existence=True. "
+              "This will not work as the image paths are not verified in the bucket.")
+        verify_existence = False
+
+    print("\n ------------------- ")
+    print("[INFO] Loading test dataset metadata...")
+
+    print("[INFO] Fetching test metadata...")
+    test_metadata = dh.fetch_metadata(phase='test',
+                                      full_data=full_data,
+                                      verify_existence=verify_existence)
+    if len(test_metadata) == 0:
+        print("[ERROR] No images found in the dataset for Testing. "
+              "Check the dataset folder or code.")
+        exit(1)
+
+    print(" - Test metadata size:", len(test_metadata))
+    print(" - Creating test dataloader...")
+    test_loader = DataLoader(ImagePreprocessor
+                             (test_metadata,
+                              channels_mode=channels_mode,
+                              return_study_id=False,
+                              use_bucket=use_bucket),
+                             batch_size=1, shuffle=False,
+                             num_workers=1,
+                             pin_memory=pin_memory)
+    return test_loader
+
+
+# ================================ END OF GENERAL FUNCTIONS =============================== #
+
+# HOOK TESTING
+
+def test_attention_hook(model, device, layer_num=-1, block_num=-1):
+    """
+        Performs a forward pass on a dummy image to verify if the hook has correctly saved the `attn_weights`.
+        Prints the shape and performs basic checks.
+
+        Args:
+            model: The Swin V2 model with the hook already registered.
+            device: torch.device
+            layer_num: Layer to read from (default: last).
+            block_num: Block to read from (default: last).
+
+        Returns:
+            attn_weights: Saved attention tensor, or None.
+    """
+    import torch
+
+    model.eval()
+
+    # Assuming the model is a SwinV2 model with an attention module
+    # Assuming 3 channels and 256x256 input size for the dummy image
+    # Fictitious image with 3 channels, as per current preprocessing
+    dummy_input = torch.randn(1, 3, 256, 256).to(device)
+
+    with torch.no_grad():
+        _ = model(dummy_input)
+
+    # Access the attention weights from the specified layer and block
+    attn_module = model.layers[layer_num].blocks[block_num].attn
+
+    if not hasattr(attn_module, "attn_weights"):
+        print("[❌] Nessun attributo 'attn_weights' salvato nel modulo Attn.")
+        return None
+
+    attn = attn_module.attn_weights
+
+    if attn is None:
+        print("[❌] L'attributo 'attn_weights' è None.")
+        return None
+
+    print(f"[✅] Attention salvata: shape = {attn.shape}, dtype = {attn.dtype}")
+    if attn.dim() == 4:
+        print(f"[ℹ️] Dimensioni: Batch = {attn.shape[0]}, Heads = {attn.shape[1]}, Tokens = {attn.shape[2]}")
+    else:
+        print("[⚠️] Shape non atteso: attenzione, potresti dover cambiare l'hook.")
+
+    return attn

@@ -85,12 +85,17 @@ def collect_reports_txt_single_thread(directories):
     return reports
 
 if __name__ == "__main__":
-    read = True
+    read = False
+    only_pXX = True
     if read:
         # Load the reports from the .npy file
         try:
-            reports_dict = np.load("../ontology/scispacy/nlp_tests/reports.npy", allow_pickle=True).item()
-            print("Reports loaded successfully.")
+            if only_pXX:
+                reports_dict = np.load("../ontology/scispacy/nlp_tests/reports_p10.npy", allow_pickle=True).item()
+                print("Reports P10 only loaded successfully.")
+            else:
+                reports_dict = np.load("../ontology/scispacy/nlp_tests/reports.npy", allow_pickle=True).item()
+                print("Reports loaded successfully.")
 
             # Print the number of reports loaded
             print(f"Number of reports loaded: {len(reports_dict)}")
@@ -106,15 +111,22 @@ if __name__ == "__main__":
     else:
         # Find all directories with pXX (where X is a digit) inside the MIMIC_REPORT_DIR
         # New function to list all files (excluding subdirectories) with full paths in a given directory
-        def list_files_in_directory(directory):
-            return [os.path.join(directory, entry) for entry in os.listdir(directory) if os.path.isdir(os.path.join(directory, entry)) and entry.startswith("p")]
+        def list_files_in_directory(directory, test_report=only_pXX, p_xx=None):
+            return [os.path.join(directory, entry) for entry in os.listdir(directory)
+                    if os.path.isdir(os.path.join(directory, entry)) and entry.startswith("p") and
+                    (not test_report or entry.startswith(p_xx))
+                    ]
+        mimic_dirs = ['p11', 'p12', 'p13', 'p14', 'p15', 'p16', 'p17', 'p18', 'p19']
+        for direc in mimic_dirs:
+            dirs = list_files_in_directory(MIMIC_REPORT_DIR, test_report=only_pXX, p_xx=direc)
 
-        dirs = list_files_in_directory(MIMIC_REPORT_DIR)
+            # Collect the reports into a dictionary
+            reports_dict = collect_reports_txt(dirs, max_workers=4)
 
-        # Collect the reports into a dictionary
-        reports_dict = collect_reports_txt(dirs, max_workers=4)
-
-        # Save the dictionary as a .npy file
-        np.save("../ontology/scispacy/nlp_tests/reports.npy", reports_dict)
-
-        print("Reports saved as reports.npy")
+            # Save the dictionary as a .npy file
+            if only_pXX:
+                np.save(f"../ontology/scispacy/nlp_tests/reports_{direc}.npy", reports_dict)
+                print(f"Reports saved as reports_{direc}.npy")
+            else:
+                np.save("../ontology/scispacy/nlp_tests/reports.npy", reports_dict)
+                print("Reports saved as reports.npy")

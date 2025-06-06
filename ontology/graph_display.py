@@ -17,6 +17,7 @@ def show_graph(graph):
         pos = nx.spring_layout(graph)  # If pygraphviz is not available, use spring layout
 
     plt.figure(figsize=(150, 50))
-    nx.draw(graph, pos, with_labels=True, node_size=2000, node_color="lightblue", edge_color="gray", font_size=10, font_weight="bold", arrows=True)
+    nx.draw(graph, pos, with_labels=True, node_size=2000, node_color="lightblue",
+            edge_color="gray", font_size=10, font_weight="bold", arrows=True)
     plt.title("Visualizzazione Gerarchica del Grafo a partire da RID1")
     plt.show()

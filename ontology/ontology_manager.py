@@ -581,7 +581,7 @@ class RadLexGraphBuilder:
                 self.graph.add_edge(parent.name, clss.name, relation="parent_of")
                 self.__add_edge_from_attributes(clss)
 
-                # Recur deeper into hierarchy if subclss is a key in the dictionary
+                # Recur deeper into hierarchy if subclass is a key in the dictionary
                 for subclass in clss.subclasses():
                     sub_label_low = self.get_property(subclass, _prefLabel).lower()
                     if sub_label_low in value.keys():
