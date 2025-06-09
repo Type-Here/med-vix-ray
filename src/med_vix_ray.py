@@ -13,7 +13,7 @@ import src.train_helpers
 from settings import NUM_EPOCHS, LEARNING_RATE_TRANSFORMER, LEARNING_RATE_CLASSIFIER, UNBLOCKED_LEVELS, MIMIC_LABELS, \
     MODELS_DIR, LAMBDA_SIM, EPOCH_GRAPH_INTEGRATION, ALPHA_GRAPH, ATTENTION_MAP_THRESHOLD, \
     MIMIC_LABELS_MAP_TO_GRAPH_IDS, NER_GROUND_TRUTH, MANUAL_GRAPH, INJECT_BIAS_FROM_THIS_LAYER, EARLY_STOPPING_PATIENCE, \
-    LEARNING_RATE_INPUT_LAYER, LAMBDA_KL
+    LEARNING_RATE_INPUT_LAYER, LAMBDA_KL, MAX_EPOCH_NUDGING_REPORT_USAGE
 from src import general
 from src.fine_tuned_model import SwinMIMICClassifier
 
@@ -801,7 +801,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             use_softmax=True,
             softmax_params={'temperature': 0.5 if self.training and self.current_epoch < 4 else 0.2,
                             'top_k': 2,
-                            'use_reports': self.training and self.current_epoch < 2,
+                            'use_reports': self.training and self.current_epoch <= MAX_EPOCH_NUDGING_REPORT_USAGE,
                             'study_ids': study_ids
                             }
         )
