@@ -5,13 +5,15 @@ import os
 import json
 import torch
 from PIL import Image
+import matplotlib.pyplot as plt
 
 from src.med_vix_ray import SwinMIMICGraphClassifier
 from settings import MANUAL_GRAPH, MODELS_DIR
 from src.preprocess import preprocess_image
+from xai.feature_extract import _binarize_maps, _label_connected_components_kornia
 
 # Image path to predict
-IMAGE_PATH = "image.png"
+IMAGE_PATH = "mimic/pneumonia.jpeg"
 # View position for the image AP or PA
 VIEW_POSITION = "AP"
 
@@ -103,30 +105,54 @@ if __name__ == "__main__":
     threshold = 0.5
     for label, prob in pred_labels.items():
         if prob >= threshold:
-            print(f"{label} Predicted")
+            print(f"Predicted: {label}")
 
-    # Generate plot for attention map (save it)
-    if attention_map is not None:
-        import matplotlib.pyplot as plt
-        plt.imshow(attention_map.cpu().numpy(), cmap='hot', interpolation='nearest')
-        plt.title("Attention Map")
-        plt.colorbar()
-        plt.savefig(os.path.join(SAVE_DIR, "attention_map.png"))
-        plt.close()
+    # Normalize attention maps
+    batch_min = attention_map.view(1, -1).min(dim=1)[0].view(1, 1, 1)
+    batch_max = attention_map.view(1, -1).max(dim=1)[0].view(1, 1, 1)
+    normalized_map = (attention_map - batch_min) / (batch_max - batch_min + 1e-6)
 
-    #Generate plot for feature map (save it)
-    if feat_map is not None:
-        plt.imshow(feat_map.cpu().numpy(), cmap='gray', interpolation='nearest')
-        plt.title("Feature Map")
-        plt.colorbar()
-        plt.savefig(os.path.join(SAVE_DIR, "feature_map.png"))
-        plt.close()
+    # Define thresholds for binarization
+    current_q = 0.85
+    threshold = torch.quantile(normalized_map, current_q).item()
+
+    # Remove batch dimension for visualization
+    normalized_map = normalized_map.squeeze(0)
+    # Flip horizontally to match the original image orientation
+    #normalized_map = normalized_map.flip(dims=[-1])
+
+    # Save plots of attention maps and binarized maps for debugging
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.imshow(normalized_map.cpu().numpy(), cmap='hot', interpolation='nearest')
+    plt.title(f'Normalized Attention Map')
+    plt.colorbar()
+
+    plt.subplot(1, 2, 2)
+    plt.imshow(_binarize_maps(normalized_map, threshold).cpu().numpy(), cmap='gray',
+               interpolation='nearest')
+    plt.title(f'Binarized Map (Threshold: {threshold:.2f})')
+    plt.colorbar()
+    plt.savefig(f'attention_map.png')
+    plt.close()
+
+    # Add Labeled Regions
+    labeled_map = _label_connected_components_kornia(_binarize_maps(normalized_map, threshold))
+    plt.figure(figsize=(6, 6))
+    # use label_map masks to visualize regions
+    plt.imshow(normalized_map.cpu().numpy(), cmap='hot', interpolation='nearest')
+    for j, region_mask in enumerate(labeled_map):
+        plt.contour(region_mask.cpu().numpy(), colors=[f'C{j}'], linewidths=1)
+    plt.title(f'Labeled Regions in Attention Map')
+    plt.savefig(f'attention_map_labeled.png')
+    plt.close()
+
 
     # Print signs found
     if signs_found is not None:
-        print("-- Signs found:")
-        for sign in signs_found:
-            print(f"- {sign}")
-
+        print(f"-- Signs found: {len(signs_found[0])} --")
+        for sign in signs_found[0]:
+            for k, v in sign.items():
+                print(f"- {k}: {v}")
 
 
