@@ -505,6 +505,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self.stats_keys = None
         # Placeholder for the features extracted from the attention maps.
         self.features_dict_batch = None  # This will be a dictionary of features for each sample in the batch.
+        # Placeholder for attention maps extracted from the model.
+        self.att_maps_batch = None
 
         # Placeholder for log of features extracted and signs found number in debug mode.
         self._debug_features_log = None
@@ -784,6 +786,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
         # 4. Extract attention maps and features
         att_maps_batch = self.attention_map_generator.extract(x)
+        self.att_maps_batch = att_maps_batch  # Store for use in inference
         features_dict_batch = xai_fe.extract_attention_batch_multiregion_torch(att_maps_batch, self.device,
                                                     threshold=ATTENTION_MAP_THRESHOLD, # Now defaults to 'percentile' threshold
                                                     current_epoch=self.current_epoch)
