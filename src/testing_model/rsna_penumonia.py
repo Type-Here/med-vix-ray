@@ -74,10 +74,11 @@ def load_pretrained_model() -> Tuple[SwinMIMICGraphClassifier, torch.device]:
 
 
 class RSNADataset(torch.utils.data.Dataset):
-    def __init__(self, dcm_paths, df_out, image_size=(256, 256)):
+    def __init__(self, dcm_paths, df_out, image_size=(256, 256), is_only_binary=False):
         self.dicom_paths:list = dcm_paths
         self.df_out:DataFrame = df_out
         self.image_size:Tuple = image_size
+        self.is_only_binary = is_only_binary
 
     def __len__(self):
         return len(self.dicom_paths)
@@ -85,7 +86,12 @@ class RSNADataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         dicom_path, image_id = self.dicom_paths[idx]
         x = preprocess_rsna_dicom(dicom_path, self.image_size)
-        y = torch.tensor(self.df_out[self.df_out['patientId'] == image_id][['Target', 'ternary']].values.astype(np.float32))
+        row = self.df_out[self.df_out['patientId'] == image_id].iloc[0]
+        if self.is_only_binary:
+            # For binary classification, we only need the 'Target' column
+            y = torch.tensor([row['Target']], dtype=torch.float32)
+        else:
+            y = torch.tensor([row['Target'], row['ternary']], dtype=torch.float32)
         return x.squeeze(0), y, image_id
 
 
