@@ -516,6 +516,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         self.is_graph_used = False
         # Flag for Graph Nudger mode.
         self.is_using_nudger = False
+        # Flag for Fine-tuning mode.
+        self.is_fine_tuning = False
 
         # Epoch threshold to activate graph-based mechanisms (both transformer bias & final nudging).
         self.graph_integration_start_epoch = graph_integration_start_epoch
@@ -799,12 +801,12 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.graph,
             extracted_features=features_dict_batch,
             device=self.device,
-            update_features=self.training,
+            update_features=self.training and not self.is_fine_tuning,
             is_inference=self.is_inference or use_graph_guidance,
             use_softmax=True,
             softmax_params={'temperature': 0.5 if self.training and self.current_epoch < 4 else 0.2,
                             'top_k': 2,
-                            'use_reports': self.training and self.current_epoch <= MAX_EPOCH_NUDGING_REPORT_USAGE,
+                            'use_reports': not self.is_fine_tuning and self.training and self.current_epoch <= MAX_EPOCH_NUDGING_REPORT_USAGE,
                             'study_ids': study_ids
                             }
         )
