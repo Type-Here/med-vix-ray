@@ -426,9 +426,10 @@ class GraphNudger(nn.Module):
             torch.Tensor: [B, num_diseases] nudging bias
         """
         from collections import defaultdict
+        num_all_diseases = len(MIMIC_LABELS)
 
         batch = grad_output_batch.size(0)
-        nudges = torch.zeros(batch, num_diseases, device=device)
+        nudges = torch.zeros(batch, num_all_diseases , device=device)
 
         self.sign_to_diseases = defaultdict(list)
 
@@ -451,6 +452,18 @@ class GraphNudger(nn.Module):
                 s_id = int(s_dict["id"])
                 for d, w in self.sign_to_diseases.get(s_id, []):
                     nudges[i, d] += self.eta * w * sim * g
+
+        if num_all_diseases != num_diseases:
+            # If the number of diseases is less than the total number of labels,
+            # compute the mean only if there are remaining elements
+            for i in range(batch):
+                if nudges.shape[1] > num_diseases:
+                    remaining = nudges[i, num_diseases:]
+                    if remaining.numel() > 0:
+                        remaining_nudges = remaining.mean()
+                        nudges[i, num_diseases:] = remaining_nudges
+            # Reduce the size to [B, num_diseases]
+            nudges = nudges[:, :num_diseases]
 
         return nudges
 
@@ -840,7 +853,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 device=self.device,
                 signs_found=signs_found,
                 graph=self.graph,
-                num_diseases=len(MIMIC_LABELS),
+                #match num_diseases with classifier output number of classes
+                num_diseases= self.num_classes,
                 grad_output_batch=grad_output_batch
             )
             # Transfer the update vector to the same device as the classifier logits.
