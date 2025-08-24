@@ -393,78 +393,96 @@ class GraphAttentionModule(nn.Module):
 
 
 class GraphNudger(nn.Module):
-    def __init__(self, eta=0.01):
-        super(GraphNudger, self).__init__()
-        self.eta = eta  # Nudging learning rate
-        self.sign_to_diseases = None  # Dictionary to store sign-to-disease mappings
+    def __init__(
+        self,
+        eta: float = 1.0,                 # base rate; final scale is calibrated
+        target_logit_shift: float = 0.25, # desired ~95th pct logit shift
+        max_abs_logit_delta: float = 0.7, # safety clamp in logit units
+        ema_momentum: float = 0.95,
+        eps: float = 1e-6
+    ):
+        super().__init__()
+        self.eta = eta
+        self.tau = target_logit_shift
+        self.max_abs = max_abs_logit_delta
+        self.beta = ema_momentum
+        self.eps = eps
 
-    def forward(self, device, signs_found, graph,
-                num_diseases, grad_output_batch):
-        """
-        Compute a nudging bias vector for each sample in the batch based on the difference
-        between the extracted heatmap features and the stored features in the graph's sign nodes.
+        self.register_buffer("running_grad_med", torch.tensor(1.0))
+        self.register_buffer("alpha_per_class", torch.empty(0))
 
-        For each sample and for each disease node d, we sum over all finding edges from d to sign nodes:
+        self._graph_index_built = False
+        self._sign_to_diseases = None
 
-            Δb_d^(i) = η * ∑_{edge: source=d, type='finding'} (w_{d,s} * sim(f_att^(i), f_s) * g^(i))
-
-        where:
-          - f_att^(i) is the heatmap sign related to sample i,
-          - f_s is the stored sign node,
-          - sim(·,·) is the cosine similarity (normalized to [0,1]),
-          - g^(i) is the gradient vector for sample i (elementwise used),
-          - w_{d,s} is the edge weight.
-
-        Args:
-            device (torch.device): device to use for computations (CPU or GPU).
-            signs_found (dict): dictionary with sign node IDs as keys and their features as values.
-            graph (dict): the full graph (nodes + links)
-            num_diseases (int): number of disease classes
-            grad_output_batch (torch.Tensor): [B, f_dim] classifier gradient output
-
-        Returns:
-            torch.Tensor: [B, num_diseases] nudging bias
-        """
+    def _build_graph_index(self, graph: dict, num_diseases: int, device):
         from collections import defaultdict
-        num_all_diseases = len(MIMIC_LABELS)
+        # accumulate outgoing L1 weight per disease
+        out_sum = torch.zeros(num_diseases, device=device)
+        tmp = defaultdict(list)  # s_id -> [(d, w_raw)]
 
-        batch = grad_output_batch.size(0)
-        nudges = torch.zeros(batch, num_all_diseases , device=device)
+        for e in graph.get("links", []):
+            if e.get("relation") != "finding":
+                continue
+            d = int(e["source"]); s = int(e["target"])
+            if d < 0 or d >= num_diseases:
+                continue
+            w = float(e.get("weight", 1.0))
+            tmp[s].append((d, w))
+            out_sum[d] += abs(w)
 
-        self.sign_to_diseases = defaultdict(list)
+        # normalize weights per disease
+        sign_to_diseases = defaultdict(list)
+        for s_id, lst in tmp.items():
+            for d, w in lst:
+                denom = out_sum[d].item() if out_sum[d].item() > 0 else 1.0
+                sign_to_diseases[s_id].append((d, w / denom))
 
-        for edge in graph["links"]:
-            if edge["relation"] == "finding":
-                d = int(edge["source"])
-                s = int(edge["target"])
-                w = edge.get("weight", 1.0)
-                self.sign_to_diseases[s].append((d, w))
+        self._sign_to_diseases = sign_to_diseases
+        self._graph_index_built = True
 
-        # Get the Gradient for the current sample
+    @torch.no_grad()
+    def _update_grad_scale(self, grad_norms):
+        med = grad_norms.median()
+        self.running_grad_med = self.beta * self.running_grad_med + (1 - self.beta) * med
+
+    @torch.no_grad()
+    def _update_alpha(self, abs_raw):
+        # per-class 95th percentile
+        q95 = torch.quantile(abs_raw, q=0.95, dim=0)
+        alpha_new = self.tau / (q95 + self.eps)
+        if self.alpha_per_class.numel() == 0:
+            self.alpha_per_class = alpha_new
+        else:
+            self.alpha_per_class = self.beta * self.alpha_per_class + (1 - self.beta) * alpha_new
+
+    def forward(self, device, signs_found, graph, num_diseases, grad_output_batch):
+        bat = grad_output_batch.size(0)
+        if not self._graph_index_built:
+            self._build_graph_index(graph, num_diseases, device)
+
+        # gradient norm normalization (robust)
         grad_norms = torch.norm(grad_output_batch, dim=1)  # [B]
+        self._update_grad_scale(grad_norms)
+        g_norm = grad_norms / (self.running_grad_med + self.eps)  # ~O(1)
 
-        # Process each sample
-        for i in range(batch):
-            g = grad_norms[i].item()
-            list_of_signs = signs_found[i] # Get list of dicts containing sign node IDs and their features
-            for s_dict in list_of_signs:
-                sim = s_dict.get("similarity", 0)
+        # raw accumulation
+        raw = torch.zeros(bat, num_diseases, device=device)
+        for i in range(bat):
+            gi = float(g_norm[i].item())
+            for s_dict in signs_found.get(i, []):
                 s_id = int(s_dict["id"])
-                for d, w in self.sign_to_diseases.get(s_id, []):
-                    nudges[i, d] += self.eta * w * sim * g
+                sim  = float(s_dict.get("similarity", 0.0))
+                for (d, w_norm) in self._sign_to_diseases.get(s_id, []):
+                    raw[i, d] += self.eta * w_norm * sim * gi
 
-        if num_all_diseases != num_diseases:
-            # If the number of diseases is less than the total number of labels,
-            # compute the mean only if there are remaining elements
-            for i in range(batch):
-                if nudges.shape[1] > num_diseases:
-                    remaining = nudges[i, num_diseases:]
-                    if remaining.numel() > 0:
-                        remaining_nudges = remaining.mean()
-                        nudges[i, num_diseases:] = remaining_nudges
-            # Reduce the size to [B, num_diseases]
-            nudges = nudges[:, :num_diseases]
+        # per-class calibration and clipping
+        abs_raw = raw.abs()
+        self._update_alpha(abs_raw)
+        if self.alpha_per_class.numel() != num_diseases:
+            self.alpha_per_class = torch.ones(num_diseases, device=device)
 
+        nudges = raw * self.alpha_per_class  # [B,C] * [C]
+        nudges = nudges.clamp(-self.max_abs, self.max_abs)
         return nudges
 
 
@@ -543,7 +561,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         if ner_ground_truth_path is None:
             raise ValueError("ner_ground_truth cannot be None.")
         with open(ner_ground_truth_path, 'r') as nerf:
-            self.ner_ground_truth = json.load(nerf)
+            self.ner_ground_truth:dict = json.load(nerf)
 
         # Initialize graph information.
         # Expecting graph_json to contain "nodes" and "edges". For our vocabulary:
@@ -604,7 +622,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # This module is responsible for the final nudging operation on the classifier head:
         # it compares attention-derived features with stored sign node statistics and computes a weight update.
         print("Initializing graph nudger...")
-        self.graph_nudger = GraphNudger(eta=0.01)  # nudging learning rate
+        self.graph_nudger = GraphNudger()  # eta = nudging learning rate
 
         # Note: self.classifier is already defined in the parent class (SwinMIMICClassifier).
 
@@ -862,6 +880,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             # 6a. Then final logits become:
             final_logits = self.classifier_logits + update_vector  # where classifier_logits is [B, num_diseases]
+            # Random print for debugging
+            if np.random.rand() < 0.3:
+                print(f"[Nudging] update_vector sample: {update_vector[0,:5].detach().cpu().numpy()}")
+                print(f"[Nudging] classifier_logits sample: {self.classifier_logits[0,:5].detach().cpu().numpy()}")
         else:
             # 6a.2 If nudging is not used, we can still compute the graph bias.
             final_logits = self.classifier_logits
@@ -1171,9 +1193,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         # Load the state dict from the specified path.
         checkpoint = torch.load(state_dict_path, map_location=self.device, weights_only=False)
         # Load the model state dict.
-        self.load_state_dict(checkpoint["model_state_dict"])
+        self.load_state_dict(checkpoint["model_state_dict"], strict=False)
 
-        self.graph = graph_json
+        self.graph:dict = graph_json
         print(" - Graph Json Assigned.")
 
         num_signs = len(self.graph["nodes"]) - len(MIMIC_LABELS)
