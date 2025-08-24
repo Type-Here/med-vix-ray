@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 from torch.nn import Sequential, Linear, Dropout, ReLU
 from torch.utils.data import DataLoader
 
-from rsna_penumonia import load_pretrained_model, RSNADataset
+from rsna_pneumonia import load_pretrained_model, RSNADataset
 
 from settings import BATCH_SIZE
 from src.med_vix_ray import SwinMIMICGraphClassifier
