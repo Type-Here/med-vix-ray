@@ -205,8 +205,8 @@ def get_test_dataloader( pin_memory=False,
                               channels_mode=channels_mode,
                               return_study_id=False,
                               use_bucket=use_bucket),
-                             batch_size=1, shuffle=False,
-                             num_workers=1,
+                             batch_size=BATCH_SIZE, shuffle=False,
+                             num_workers=NUM_WORKERS,
                              pin_memory=pin_memory)
     return test_loader
 
