@@ -157,7 +157,7 @@ ETA_GRAPH = 0.1 # Learning rate for the graph nudger module
 ATTENTION_MAP_THRESHOLD = 'percentile' # Threshold for attention map analysis
 
 MAX_REGIONS_PER_IMAGE = 5 # Maximum number of regions to be extracted from the attention map for each image
-
+MAX_EPOCH_NUDGING_REPORT_USAGE = 3 # Maximum number of epochs to use the report for nudging using features from graph
 # ===== PARAMETERS FOR SIMILARITY CALCULATION ======
 
 # Threshold for similarity calculation between graph nodes and medical reports
