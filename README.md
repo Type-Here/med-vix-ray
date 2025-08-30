@@ -158,6 +158,35 @@ This is to comply with the MIMIC dataset’s usage policy and to protect patient
 
 ---
 
+## 📄 Citation
+
+This repository is archived on Zenodo:  
+[![DOI](https://zenodo.org/badge/944608098.svg)](https://doi.org/10.5281/zenodo.17009381)
+
+Always latest at:  
+[https://doi.org/10.5281/zenodo.17009380](https://doi.org/10.5281/zenodo.17009380)
+
+If you use this code, please cite it as:  
+`Cieri, M. (2025). Type-Here/med-vix-ray: Med-Vix-Ray v1.0.0 (v1.0.0). Zenodo. 
+https://doi.org/10.5281/zenodo.17009381`
+
+or bibtex:
+
+```bibtex
+@software{Cieri_Palomba__medvixray_2025,
+  author       = {Cieri M. and Palomba F.},
+  license      = {GNU General Public License v3.0},
+  title        = {Med-ViX-Ray: Interpretable Chest X-Ray Diagnosis via Symbolic Reasoning},
+  year         = {2025},
+  publisher    = {Zenodo},
+  version      = {1.0.0},
+  doi          = {10.5281/zenodo.17009381},
+  url          = {https://doi.org/10.5281/zenodo.17009381}
+}
+```
+
+---
+
 ## Acknowledgements
 
 - The [MIMIC-CXR-JPG dataset](https://physionet.org/content/mimic-cxr-jpg/2.0.0/) and the [PhysioNet](https://physionet.org/) community
