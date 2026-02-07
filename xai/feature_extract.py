@@ -381,7 +381,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
 
     # Stack the vectors to create a 2D tensor
     sign_vecs = torch.stack(sign_vecs)  # [N_signs, F]
-    ner_path = softmax_params.get("ner_path", None) if softmax_params is not None else None
+    ner_dict = softmax_params.get("ner", None) if softmax_params is not None else None
 
     for i, regions_list in enumerate(extracted_features):
         n_features = len(regions_list)
@@ -402,7 +402,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
                     update_features=update_features,
                     is_inference=is_inference,
                     temperature=temperature, top_k=top_k,
-                    use_reports=use_reports, study_id=study_id, ner_path=ner_path
+                    use_reports=use_reports, study_id=study_id, ner_dict=ner_dict
                 )
                 if is_inference:
                     signs_found[i].extend(matched_signs)
@@ -492,7 +492,7 @@ _FE_CACHE = {}
 
 def __softmax_weighted_update_signs(region_feat, sign_vecs, sign_ids, graph, sign_labels,
                                     stats_keys, device, n_features, update_features=True, is_inference=False,
-                                    temperature=0.5, top_k=2, use_reports=False, study_id=None, ner_path=None):
+                                    temperature=0.5, top_k=2, use_reports=False, study_id=None, ner_dict=None):
     """
         Uses **probabilistic softmax** to assign region features to sign nodes based on cosine similarity.
 
@@ -509,6 +509,9 @@ def __softmax_weighted_update_signs(region_feat, sign_vecs, sign_ids, graph, sig
             is_inference (bool): if True, return detected signs for inference, else update graph.
             temperature (float): softmax temperature for scaling similarities.
             top_k (int): maximum number of top nodes to consider for each region.
+            use_reports (bool): if True, filter sign_vecs based on report information for the current study_id.
+            study_id (str): current study ID for report filtering (if use_reports=True).
+            ner_dict (dict): dict of ner info (if use_reports=True).
 
         Returns:
             list of dicts with detected signs (if is_inference=True), else empty list.
@@ -521,11 +524,10 @@ def __softmax_weighted_update_signs(region_feat, sign_vecs, sign_ids, graph, sig
     # Remove from sign_vecs the nodes that are not in the reports
     if use_reports and study_id is not None:
         if "report" not in _FE_CACHE:
-            import json
-            if ner_path is None:
+            if ner_dict is None:
                 raise ValueError("ner_path must be provided when use_reports=True")
-            report = json.loads(open(ner_path, "r").read())
-            _FE_CACHE["report"] = report
+            _FE_CACHE["report"] = ner_dict
+            report = _FE_CACHE["report"]
         else:
             report = _FE_CACHE["report"]
 

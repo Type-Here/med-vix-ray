@@ -706,6 +706,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                         # -> therefore we need a version that returns modified scores, not softmax
             except Exception as e:
                 # fail-safe: if something goes wrong, skip graph bias
+                print(f"[ERROR]Error in graph bias injection: {e}. Skipping graph bias for this forward pass.")
                 pass
 
             if mask is not None:
@@ -878,7 +879,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                             'top_k': 2,
                             'use_reports': not self.is_fine_tuning and self.training and self.current_epoch <= MAX_EPOCH_NUDGING_REPORT_USAGE,
                             'study_ids': study_ids,
-                            'ner_path': NER_GROUND_TRUTH_TRAIN if self.training else NER_GROUND_TRUTH
+                            'ner': NER_GROUND_TRUTH_TRAIN if self.training else None
                             }
         )
 
