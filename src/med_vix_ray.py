@@ -23,7 +23,7 @@ import xai.edges_stats_update as update_edges
 from src.train_helpers import CustomLRScheduler, EarlyStopper, focal_loss
 
 NER_GROUND_TRUTH_TRAIN = None
-
+USE_BUCKETS = False
 
 def _compute_batch_features_vectors(features_dict, keys_order=None):
     """
@@ -1368,7 +1368,7 @@ if __name__ == "__main__":
     training_loader, valid_loader = general.get_dataloaders(return_study_id=True,
                                                             return_val_loader=True,
                                                             pin_memory=is_cuda,
-                                                            use_bucket=True, verify_existence=False, full_data=True)
+                                                            use_bucket=USE_BUCKETS, verify_existence=False, full_data=True)
 
     # Load NER Ground Truth filtered for training studies
     print("Loading NER Ground Truth Train Only...")
@@ -1391,7 +1391,7 @@ if __name__ == "__main__":
     # Load the test dataset
     print("Loading test dataset...")
     test_loader = general.get_test_dataloader(full_data=True, pin_memory=is_cuda,
-                                              use_bucket=True, verify_existence=False,
+                                              use_bucket=USE_BUCKETS, verify_existence=False,
                                               channels_mode="RGB")
     print("Test dataset loaded.")
 
