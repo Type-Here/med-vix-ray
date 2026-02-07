@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 import dataset.dataset_handle as dh
 from settings import NUM_WORKERS, BATCH_SIZE
 from src.preprocess import ImagePreprocessor
+from xai.feature_extract import normalize_study_id
 
 """
     General utility functions for the project model.
@@ -126,9 +127,9 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
                                       use_bucket=use_bucket,
                                       augment=True,
                                       is_training=True),
-                                 batch_size=BATCH_SIZE, shuffle=True,
-                                 num_workers=NUM_WORKERS,
-                                 pin_memory=pin_memory)
+                                     batch_size=BATCH_SIZE, shuffle=True,
+                                     num_workers=NUM_WORKERS,
+                                     pin_memory=pin_memory)
 
     if return_val_loader:
         print("[INFO] Fetching validation metadata...")
@@ -147,15 +148,15 @@ def get_dataloaders(return_study_id=False, pin_memory=False,
                                    channels_mode=channels_mode,
                                    return_study_id=False,
                                    use_bucket=use_bucket),
-                              batch_size=BATCH_SIZE, shuffle=False,
-                              num_workers=NUM_WORKERS,
-                              pin_memory=pin_memory)
+                                  batch_size=BATCH_SIZE, shuffle=False,
+                                  num_workers=NUM_WORKERS,
+                                  pin_memory=pin_memory)
 
     return training_loader, valid_loader
 
 
-def get_test_dataloader( pin_memory=False,
-                         full_data=False, verify_existence=False, use_bucket=False, channels_mode="RGB"):
+def get_test_dataloader(pin_memory=False,
+                        full_data=False, verify_existence=False, use_bucket=False, channels_mode="RGB"):
     """
         Get the test dataloader.
 
@@ -262,21 +263,32 @@ def test_attention_hook(model, device, layer_num=-1, block_num=-1):
 
     return attn
 
+
 # =================================  NER FILTERING  ==================================
 
-def filter_ner_ground_truth_by_study_ids(ner_dict, phase = "train", full_data=True):
+def filter_ner_ground_truth_by_study_ids(ner_dict, phase="train", full_data=True):
     """
         Filter the NER dictionary to only include entries with study IDs in the provided list.
 
         Args:
-            ner_dict (dict): Dictionary with study IDs as keys and NER data as values.
+            ner_dict (str): Path to Dictionary with study IDs as keys and NER data as values.
             phase (str): Phase of the dataset ('train', 'val', 'test').
 
         Returns:
             dict: Filtered NER dictionary.
     """
+    import json
+
+    with open(ner_dict, 'r') as f:
+        ner_dict = json.load(f)
+
     train_info = dh.fetch_metadata(phase=phase, full_data=full_data, verify_existence=False)
-    valid_study_ids = set(item['study_id'] for item in train_info)
+    valid_study_ids = set(normalize_study_id(item['study_id']) for item in train_info)
+
+    print("[INFO] Valid study IDs count:", len(valid_study_ids))
+
     filtered_ner = {study_id: ner_data for study_id, ner_data in ner_dict.items()
-                    if int(study_id[1:]) in valid_study_ids}
+                    if study_id in valid_study_ids}
+    print("[INFO] Filtered NER dictionary length:", len(filtered_ner))
+
     return filtered_ner
