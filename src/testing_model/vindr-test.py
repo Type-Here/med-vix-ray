@@ -87,8 +87,8 @@ vindr_to_mimic_mapping = {
     "Infiltration": "Lung Opacity",
     "Pleural effusion": "Pleural Effusion",
     "Pleural thickening": "Pleural Other",
-    "Pulmonary fibrosis": "Pleural Other",
-    "ILD": "Pleural Other",
+    #"Pulmonary fibrosis": "Lung Lesion",
+    #"ILD": "Lung Lesion",
     "Pneumothorax": "Pneumothorax",
     "Pneumonia": "Pneumonia",
     "Tuberculosis": "Lung Lesion",  # Opzionale
@@ -197,10 +197,11 @@ if __name__ == "__main__":
     print("Now mapping VinDr labels to MIMIC labels...")
     # Create new dataframe with MIMIC labels
     mimic_rows = []
-    for _, row in vindr_df.iterrows():
-        vindr_row = row[vindr_label_columns].to_dict()
-        mimic_row = map_vindr_row_to_mimic(vindr_row)
-        mimic_rows.append(mimic_row)
+    vindr_img_df = vindr_df.groupby("image_id")[vindr_label_columns].max()
+    #for _, row in vindr_df.iterrows():
+    #    vindr_row = row[vindr_label_columns].to_dict()
+    #    mimic_row = map_vindr_row_to_mimic(vindr_row)
+    #    mimic_rows.append(mimic_row)
 
     df_out.loc[vindr_df["image_id"].values] = mimic_rows
 
