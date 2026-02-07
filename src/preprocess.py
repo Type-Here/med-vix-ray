@@ -228,9 +228,8 @@ class ImagePreprocessor(Dataset):
 
         # If return_study_id is True, extract the study_id
         if self.return_study_id:
-            study_id = self.data_dict[idx]["study_id"]
-            study_id_tensor = torch.tensor([int(study_id)], dtype=torch.float)
-            res_list.append(study_id_tensor)
+            study_id = str(self.data_dict[idx]["study_id"]) # Fixed: no float conversion
+            res_list.append(study_id)
 
         return tuple(res_list)
 
