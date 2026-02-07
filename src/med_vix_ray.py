@@ -22,6 +22,8 @@ import xai.feature_extract as xai_fe
 import xai.edges_stats_update as update_edges
 from src.train_helpers import CustomLRScheduler, EarlyStopper, focal_loss
 
+NER_GROUND_TRUTH_TRAIN = None
+
 
 def _compute_batch_features_vectors(features_dict, keys_order=None):
     """
@@ -246,12 +248,14 @@ class GraphAttentionBias(nn.Module):
         # Replicates the resized matrix across the batch dimension (ba),
         # resulting in a tensor of shape [B, 1, N, N]:
         g_resized = g_resized.expand(ba, -1, -1, -1)  # [B, 1, N, N]
+        # Match Multi-head attention shape by expanding across heads:
+        g_mhead = g_resized.expand(-1, he, -1, -1)  # [B,H,N,N]
 
         # Call the convolutional layer to adapt the graph matrix to the attention scores:
         # Normalize with tanh
         conv_idx = layer_idx - self._first_layer_injected
 
-        g_adapted = torch.tanh(self.conv[conv_idx](g_resized))
+        g_adapted = torch.tanh(self.conv[conv_idx](g_mhead))
         #g_adapted = self.conv(g_resized) # [B, N, N]
 
         # Debugging information only first time
@@ -270,10 +274,12 @@ class GraphAttentionBias(nn.Module):
         # Modify the attention scores by adding the adapted graph matrix:
         # No scaling needed in this case as swin transformer already scales
         # the attention scores using cosine similarity and tau division
-        modified_scores = attn_scores + alpha * g_adapted.unsqueeze(1)  # [B, 1, N, N]
+        modified_scores = attn_scores + alpha * g_adapted #.unsqueeze(1)  # [B, 1, N, N] # No unsqueeze needed for multi-head
 
         # modified_scores = attn_scores / (attn_scores.shape[-1]**0.5) + self.alpha * g_resized
-        return torch.softmax(modified_scores, dim=-1)
+        #return torch.softmax(modified_scores, dim=-1)
+        return modified_scores # [B, H, N, N] # Softmax applied later in attention module
+        #.squeeze(1)  # [B, N, N]
 
 
 # ========================= GRAPH ATTENTION MODULE =========================
@@ -376,6 +382,12 @@ class GraphAttentionModule(nn.Module):
         #     "dicom_ids": [dicom_id1, dicom_id2, ...],
         #   }, ...
         # }
+
+        # normalize study_id to match JSON keys like "s12345"
+        if hasattr(study_id, "item"):
+            study_id = study_id.item()
+        study_id = f"s{int(study_id)}" if str(study_id)[0] != "s" else str(study_id)
+
         gt_entry = self.ner_ground_truth.get(study_id, {})  # Returns a dict for this study.
         positive_labels = [] # List with node IDs of positive labels
 
@@ -578,6 +590,10 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             # Save the computed adjacency matrix into the graph dictionary for later use.
             self.graph_matrix = graph_matrix
 
+        # Flags and parameters for graph bias injection into transformer layers.
+        self._graph_bias_enabled = True
+        self._graph_bias_layer_idx = len(self.swin_model.layers) - 2  # hook on layers[-2]
+
         # Register the forward hook on the target attention module.
         self.__patch_window_attention_hook()
 
@@ -668,6 +684,29 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()
             relative_position_bias = 16 * torch.sigmoid(relative_position_bias)
             attn = attn + relative_position_bias.unsqueeze(0)
+
+            # ---- Graph bias injection (pre-softmax) ----
+            try:
+                if getattr(self, "_graph_bias_enabled", False):
+                    layer_idx = getattr(self, "_graph_bias_layer_idx", None)
+                    if layer_idx is not None:
+                        # graph matrix to tensor on same device
+                        g = self.graph_matrix
+                        if not torch.is_tensor(g):
+                            g = torch.tensor(g, dtype=torch.float32, device=attn.device)
+                        else:
+                            g = g.to(attn.device)
+
+                        # attn shape: [B, num_heads, N, N]
+                        # graph_bias_module expects attn_scores and graph_adj_matrix
+                        # It will handle resizing and conv adaptation.
+                        # Important: pass correct layer index for alpha selection
+                        attn = self.graph_bias_module(attn, g, layer_idx)
+                        # graph_bias_module already returns softmax, so we must NOT softmax twice
+                        # -> therefore we need a version that returns modified scores, not softmax
+            except Exception as e:
+                # fail-safe: if something goes wrong, skip graph bias
+                pass
 
             if mask is not None:
                 num_win = mask.shape[0]
@@ -803,7 +842,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
         if use_graph_guidance and not self.is_graph_used:
             # Inject graph bias into the transformer layers if not already done.
             # This is done only once, at the beginning of training so flag is set to True.
-            self.__inject_graph_bias_in_transformer(self.graph_matrix, use_graph_guidance)
+            # self.__inject_graph_bias_in_transformer(self.graph_matrix, use_graph_guidance) # Moved to hook method
             self.is_graph_used = True
 
         # 2. Call the forward method of the parent class.
@@ -838,7 +877,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             softmax_params={'temperature': 0.5 if self.training and self.current_epoch < 4 else 0.2,
                             'top_k': 2,
                             'use_reports': not self.is_fine_tuning and self.training and self.current_epoch <= MAX_EPOCH_NUDGING_REPORT_USAGE,
-                            'study_ids': study_ids
+                            'study_ids': study_ids,
+                            'ner_path': NER_GROUND_TRUTH_TRAIN if self.training else NER_GROUND_TRUTH
                             }
         )
 
@@ -881,9 +921,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             # 6a. Then final logits become:
             final_logits = self.classifier_logits + update_vector  # where classifier_logits is [B, num_diseases]
             # Random print for debugging
-            if np.random.rand() < 0.3:
-                print(f"[Nudging] update_vector sample: {update_vector[0,:5].detach().cpu().numpy()}")
-                print(f"[Nudging] classifier_logits sample: {self.classifier_logits[0,:5].detach().cpu().numpy()}")
+            #if np.random.rand() < 0.3:
+            #    print(f"[Nudging] update_vector sample: {update_vector[0,:5].detach().cpu().numpy()}")
+            #    print(f"[Nudging] classifier_logits sample: {self.classifier_logits[0,:5].detach().cpu().numpy()}")
         else:
             # 6a.2 If nudging is not used, we can still compute the graph bias.
             final_logits = self.classifier_logits
@@ -994,7 +1034,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 optimizer.zero_grad()
                 images = images.to(self.device)
                 labels = labels.to(self.device)
-                study_ids = study_ids.to(self.device)
+                # study_ids = study_ids.to(self.device) # Now a list of strings
 
                 # Reset the classifier gradient to None before each batch.
                 self.classifier_grad = None
@@ -1329,6 +1369,11 @@ if __name__ == "__main__":
                                                             return_val_loader=True,
                                                             pin_memory=is_cuda,
                                                             use_bucket=True, verify_existence=False, full_data=True)
+
+    # Load NER Ground Truth filtered for training studies
+    print("Loading NER Ground Truth Train Only...")
+    NER_GROUND_TRUTH_TRAIN = general.filter_ner_ground_truth_by_study_ids(NER_GROUND_TRUTH, phase="train")
+    print(f"NER Ground Truth for training loaded with {len(NER_GROUND_TRUTH_TRAIN)} entries.")
 
     # Train the model
     print("-- Starting training of Med-ViX-Ray --")
