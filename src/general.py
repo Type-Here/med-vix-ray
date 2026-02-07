@@ -261,3 +261,22 @@ def test_attention_hook(model, device, layer_num=-1, block_num=-1):
         print("[⚠️] Shape non atteso: attenzione, potresti dover cambiare l'hook.")
 
     return attn
+
+# =================================  NER FILTERING  ==================================
+
+def filter_ner_ground_truth_by_study_ids(ner_dict, phase = "train", full_data=True):
+    """
+        Filter the NER dictionary to only include entries with study IDs in the provided list.
+
+        Args:
+            ner_dict (dict): Dictionary with study IDs as keys and NER data as values.
+            phase (str): Phase of the dataset ('train', 'val', 'test').
+
+        Returns:
+            dict: Filtered NER dictionary.
+    """
+    train_info = dh.fetch_metadata(phase=phase, full_data=full_data, verify_existence=False)
+    valid_study_ids = set(item['study_id'] for item in train_info)
+    filtered_ner = {study_id: ner_data for study_id, ner_data in ner_dict.items()
+                    if int(study_id[1:]) in valid_study_ids}
+    return filtered_ner
