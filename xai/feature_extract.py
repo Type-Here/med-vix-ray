@@ -402,7 +402,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
                     update_features=update_features,
                     is_inference=is_inference,
                     temperature=temperature, top_k=top_k,
-                    use_reports=use_reports, study_id=study_id, ner_report=ner_path
+                    use_reports=use_reports, study_id=study_id, ner_path=ner_path
                 )
                 if is_inference:
                     signs_found[i].extend(matched_signs)
@@ -492,7 +492,7 @@ _FE_CACHE = {}
 
 def __softmax_weighted_update_signs(region_feat, sign_vecs, sign_ids, graph, sign_labels,
                                     stats_keys, device, n_features, update_features=True, is_inference=False,
-                                    temperature=0.5, top_k=2, use_reports=False, study_id=None, ner_report=None):
+                                    temperature=0.5, top_k=2, use_reports=False, study_id=None, ner_path=None):
     """
         Uses **probabilistic softmax** to assign region features to sign nodes based on cosine similarity.
 
