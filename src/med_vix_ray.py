@@ -1077,7 +1077,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             # Validation step for early stopping verification and lr scheduler step.
             if (use_validation and self._validate_in_training(loss_fn, epoch,
-                                            validation_loader=validation_loader)):
+                                            validation_loader=validation_loader, use_graph=is_graph_active)):
                 break
 
         # Set the model back to evaluation mode.
@@ -1130,7 +1130,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             "total_loss": total_loss.item()
         }
 
-    def _validate_in_training(self, loss_fn, epoch, validation_loader=None):
+    def _validate_in_training(self, loss_fn, epoch, validation_loader=None, use_graph=True):
         # --- Validation step ---
         """
         Validation step for early stopping verification and lr scheduler step.
@@ -1154,7 +1154,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                     images_val = images_val.to(self.device)
                     labels_val = labels_val.to(self.device)
 
-                    val_logits = self.forward(images_val, use_graph_guidance=True)
+                    val_logits = self.forward(images_val, use_graph_guidance=use_graph)
                     val_loss = loss_fn(val_logits, labels_val)
 
                     val_running_loss += val_loss.item()
