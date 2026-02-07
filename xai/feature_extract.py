@@ -301,6 +301,26 @@ def __cosine_similarity_torch(vec1: torch.Tensor, vec2: torch.Tensor) -> float:
     return (sim + 1.0) / 2.0
 
 
+# ---- NORMALIZE STUDY ID FUNCTION ---- #
+
+def normalize_study_id(study_id):
+    if study_id is None:
+        return None
+    # tensor scalar
+    if hasattr(study_id, "item"):
+        study_id = study_id.item()
+    # if it's like ["123"] or tensor([123])
+    if isinstance(study_id, (list, tuple)) and len(study_id) == 1:
+        study_id = study_id[0]
+    # string/int
+    try:
+        sid = int(str(study_id).replace("s", "").strip())
+        return f"s{sid}"
+    except Exception:
+        return None
+
+
+
 # ---- UPDATE GRAPH USING MULTI-REGIO, MULTISIGNS EXTRACT FUNCTION ---- #
 
 def find_match_and_update_graph_features(graph, extracted_features, device, stats_keys=None,
@@ -361,6 +381,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
 
     # Stack the vectors to create a 2D tensor
     sign_vecs = torch.stack(sign_vecs)  # [N_signs, F]
+    ner_path = softmax_params.get("ner_path", None) if softmax_params is not None else None
 
     for i, regions_list in enumerate(extracted_features):
         n_features = len(regions_list)
@@ -373,13 +394,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
                 top_k = softmax_params.get("top_k", 2)
                 use_reports = softmax_params.get("use_reports", False)
                 study_ids = softmax_params.get("study_ids", None)
-                try:
-                    if hasattr(study_ids[i], 'item'):
-                        study_id = "s" + str(int(study_ids[i].item()))
-                    else:
-                        study_id = "s" + str(int(study_ids[i]))
-                except (TypeError, ValueError, IndexError):
-                    study_id = None
+                study_id = normalize_study_id(study_ids[i]) if study_ids is not None else None
 
                 matched_signs = __softmax_weighted_update_signs(
                     feature_tensor, sign_vecs, sign_ids, graph, sign_labels,
@@ -387,7 +402,7 @@ def find_match_and_update_graph_features(graph, extracted_features, device, stat
                     update_features=update_features,
                     is_inference=is_inference,
                     temperature=temperature, top_k=top_k,
-                    use_reports=use_reports, study_id=study_id
+                    use_reports=use_reports, study_id=study_id, ner_report=ner_path
                 )
                 if is_inference:
                     signs_found[i].extend(matched_signs)
@@ -477,7 +492,7 @@ _FE_CACHE = {}
 
 def __softmax_weighted_update_signs(region_feat, sign_vecs, sign_ids, graph, sign_labels,
                                     stats_keys, device, n_features, update_features=True, is_inference=False,
-                                    temperature=0.5, top_k=2, use_reports=False, study_id=None):
+                                    temperature=0.5, top_k=2, use_reports=False, study_id=None, ner_report=None):
     """
         Uses **probabilistic softmax** to assign region features to sign nodes based on cosine similarity.
 
@@ -507,7 +522,9 @@ def __softmax_weighted_update_signs(region_feat, sign_vecs, sign_ids, graph, sig
     if use_reports and study_id is not None:
         if "report" not in _FE_CACHE:
             import json
-            report = json.loads(open(NER_GROUND_TRUTH, "r").read())
+            if ner_path is None:
+                raise ValueError("ner_path must be provided when use_reports=True")
+            report = json.loads(open(ner_path, "r").read())
             _FE_CACHE["report"] = report
         else:
             report = _FE_CACHE["report"]
