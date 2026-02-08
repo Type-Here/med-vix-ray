@@ -1,5 +1,6 @@
 import json
 import os
+import random
 from pathlib import Path
 import numpy as np
 import torch
@@ -12,6 +13,15 @@ from src.med_vix_ray import SwinMIMICGraphClassifier
 from .bootstrap import bootstrap_multilabel
 from .metrics import validate_multilabel_inputs
 
+# Function to set the seed for each worker
+def seed_worker(worker_id):
+    # Derive a per-worker seed from the DataLoader / torch initial seed.
+    # DataLoader uses the provided `generator` (seeded in the main process)
+    # to set each worker's initial seed; `torch.initial_seed()` returns that value.
+    worker_seed = torch.initial_seed() % 2 ** 32
+    np.random.seed(worker_seed)
+    random.seed(worker_seed)
+    torch.manual_seed(worker_seed)
 
 def load_npz(path: str):
     data = np.load(path, allow_pickle=True)
@@ -97,6 +107,14 @@ def main():
     if not args.npz:
         print("No npz file provided. Using dataloader...")
         test_loader = general.get_test_dataloader(pin_memory=True, full_data=True)
+
+        # Set the worker_init_fn to ensure reproducibility in each worker# Create a CPU Generator seeded for reproducibility and attach it to the DataLoader
+        generator = torch.Generator(device='cpu')
+        generator.manual_seed(args.seed)
+        test_loader.generator = generator
+        # Ensure per-worker seeding still uses the provided seed
+        test_loader.worker_init_fn = lambda worker_id: seed_worker(worker_id, seed=args.seed)
+
 
         out = evaluate_multilabel(med_model, test_loader=test_loader, n_boot=args.n_boot,
                                       seed=args.seed, n_bins=args.n_bins)
