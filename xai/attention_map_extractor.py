@@ -77,3 +77,35 @@ class SelfAttentionMapExtractor:
 
         # Final shape: [B, H, W]
         return attn_norm.squeeze(1)
+
+
+    def extract_from_cached(self, x: torch.Tensor) -> torch.Tensor:
+        attn_scores = self.target_attn.attn_weights
+        if attn_scores is None:
+            raise ValueError("Attention weights not captured. Check hook.")
+
+        b_w, num_heads, n, _ = attn_scores.shape
+        bat, _, h_img, w_img = x.shape
+        ws = int(n ** 0.5)
+
+        attn_scores = attn_scores.mean(dim=1)  # [b_w, N, N]
+        diag_attn = attn_scores.diagonal(dim1=-2, dim2=-1).view(-1, 1, ws, ws)
+
+        diag_attn = diag_attn.unsqueeze(-1)
+
+        num_windows_per_img = b_w // bat
+        windows_per_side = int(round(num_windows_per_img ** 0.5))
+        h_feat = windows_per_side * ws
+        w_feat = (num_windows_per_img // windows_per_side) * ws
+
+        attn_map = window_reverse(diag_attn, window_size=(ws, ws), img_size=(h_feat, w_feat))
+        attn_map = attn_map.permute(0, 3, 1, 2).contiguous()
+
+        attn_resized = torch.nn.functional.interpolate(attn_map, size=(h_img, w_img),
+                                                       mode='bicubic', align_corners=False)
+
+        attn_min = attn_resized.amin(dim=(2, 3), keepdim=True)
+        attn_max = attn_resized.amax(dim=(2, 3), keepdim=True)
+        attn_norm = (attn_resized - attn_min) / (attn_max - attn_min + 1e-6)
+
+        return attn_norm.squeeze(1)
