@@ -22,6 +22,8 @@ import xai.feature_extract as xai_fe
 import xai.edges_stats_update as update_edges
 from src.train_helpers import CustomLRScheduler, EarlyStopper, focal_loss
 
+NER_GROUND_TRUTH_TRAIN = None
+USE_BUCKETS = False
 
 def _compute_batch_features_vectors(features_dict, keys_order=None):
     """
@@ -376,6 +378,12 @@ class GraphAttentionModule(nn.Module):
         #     "dicom_ids": [dicom_id1, dicom_id2, ...],
         #   }, ...
         # }
+
+        # normalize study_id to match JSON keys like "s12345"
+        if hasattr(study_id, "item"):
+            study_id = study_id.item()
+        study_id = f"s{int(study_id)}" if str(study_id)[0] != "s" else str(study_id)
+
         gt_entry = self.ner_ground_truth.get(study_id, {})  # Returns a dict for this study.
         positive_labels = [] # List with node IDs of positive labels
 
@@ -838,7 +846,8 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             softmax_params={'temperature': 0.5 if self.training and self.current_epoch < 4 else 0.2,
                             'top_k': 2,
                             'use_reports': not self.is_fine_tuning and self.training and self.current_epoch <= MAX_EPOCH_NUDGING_REPORT_USAGE,
-                            'study_ids': study_ids
+                            'study_ids': study_ids,
+                            'ner': NER_GROUND_TRUTH_TRAIN if self.training else None
                             }
         )
 
@@ -881,9 +890,9 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             # 6a. Then final logits become:
             final_logits = self.classifier_logits + update_vector  # where classifier_logits is [B, num_diseases]
             # Random print for debugging
-            if np.random.rand() < 0.3:
-                print(f"[Nudging] update_vector sample: {update_vector[0,:5].detach().cpu().numpy()}")
-                print(f"[Nudging] classifier_logits sample: {self.classifier_logits[0,:5].detach().cpu().numpy()}")
+            #if np.random.rand() < 0.3:
+            #    print(f"[Nudging] update_vector sample: {update_vector[0,:5].detach().cpu().numpy()}")
+            #    print(f"[Nudging] classifier_logits sample: {self.classifier_logits[0,:5].detach().cpu().numpy()}")
         else:
             # 6a.2 If nudging is not used, we can still compute the graph bias.
             final_logits = self.classifier_logits
@@ -994,7 +1003,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                 optimizer.zero_grad()
                 images = images.to(self.device)
                 labels = labels.to(self.device)
-                study_ids = study_ids.to(self.device)
+                # study_ids = study_ids.to(self.device) # Now a list of strings
 
                 # Reset the classifier gradient to None before each batch.
                 self.classifier_grad = None
@@ -1037,7 +1046,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
 
             # Validation step for early stopping verification and lr scheduler step.
             if (use_validation and self._validate_in_training(loss_fn, epoch,
-                                            validation_loader=validation_loader)):
+                                            validation_loader=validation_loader, use_graph=is_graph_active)):
                 break
 
         # Set the model back to evaluation mode.
@@ -1090,7 +1099,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             "total_loss": total_loss.item()
         }
 
-    def _validate_in_training(self, loss_fn, epoch, validation_loader=None):
+    def _validate_in_training(self, loss_fn, epoch, validation_loader=None, use_graph=True):
         # --- Validation step ---
         """
         Validation step for early stopping verification and lr scheduler step.
@@ -1114,7 +1123,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
                     images_val = images_val.to(self.device)
                     labels_val = labels_val.to(self.device)
 
-                    val_logits = self.forward(images_val, use_graph_guidance=True)
+                    val_logits = self.forward(images_val, use_graph_guidance=use_graph)
                     val_loss = loss_fn(val_logits, labels_val)
 
                     val_running_loss += val_loss.item()
@@ -1328,7 +1337,12 @@ if __name__ == "__main__":
     training_loader, valid_loader = general.get_dataloaders(return_study_id=True,
                                                             return_val_loader=True,
                                                             pin_memory=is_cuda,
-                                                            use_bucket=True, verify_existence=False, full_data=True)
+                                                            use_bucket=USE_BUCKETS, verify_existence=False, full_data=True)
+
+    # Load NER Ground Truth filtered for training studies
+    print("Loading NER Ground Truth Train Only...")
+    NER_GROUND_TRUTH_TRAIN = general.filter_ner_ground_truth_by_study_ids(NER_GROUND_TRUTH, phase="train")
+    print(f"NER Ground Truth for training loaded with {len(NER_GROUND_TRUTH_TRAIN)} entries.")
 
     # Train the model
     print("-- Starting training of Med-ViX-Ray --")
@@ -1346,7 +1360,7 @@ if __name__ == "__main__":
     # Load the test dataset
     print("Loading test dataset...")
     test_loader = general.get_test_dataloader(full_data=True, pin_memory=is_cuda,
-                                              use_bucket=True, verify_existence=False,
+                                              use_bucket=USE_BUCKETS, verify_existence=False,
                                               channels_mode="RGB")
     print("Test dataset loaded.")
 
