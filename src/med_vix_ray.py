@@ -233,6 +233,9 @@ class GraphAttentionBias(nn.Module):
         # attn_scores: [B, H, N, M], graph_adj_matrix: [N, M]
         ba, he, n_q, n_k = attn_scores.shape # a
 
+        # conv index for this injected layer
+        conv_idx = layer_idx - self._first_layer_injected
+
         # Add batch dimension to the graph adjacency matrix if needed
         if graph_adj_matrix.dim() == 2:
             graph_adj_matrix = graph_adj_matrix.unsqueeze(0)  # → [1, N0, N0]
@@ -243,28 +246,17 @@ class GraphAttentionBias(nn.Module):
         else:
             g_expanded = graph_adj_matrix
 
+        # --- resize graph to attention token grid: [1,1,N,N] ---
         g_resized = torch.nn.functional.interpolate(g_expanded, size=(n_q, n_k),
                                                     mode='bilinear',align_corners=False)
-        # Replicates the resized matrix across the batch dimension (ba),
-        # resulting in a tensor of shape [B, 1, N, N]:
-        g_resized = g_resized.expand(ba, -1, -1, -1)  # [B, 1, N, N]
-        # Match Multi-head attention shape by expanding across heads:
-        #g_mhead = g_resized.expand(-1, he, -1, -1)  # [B,H,N,N]
-        g_mhead = g_resized.expand(ba, he, n_q, n_k)
 
-        # 2) "fold" heads into batch, keep channel=1
-        g_fold = g_mhead.reshape(ba * he, 1, n_q, n_k)
+        # --- adapt graph ONCE via conv, not per-window/per-head ---
+        # output: [1,1,n_q,n_k]
+        g_adapted_base = torch.tanh(self.conv[conv_idx](g_resized))
 
-        # Call the convolutional layer to adapt the graph matrix to the attention scores:
-        # Normalize with tanh
-        conv_idx = layer_idx - self._first_layer_injected
-
-        g_adapted_fold = self.conv[conv_idx](g_fold)
-        #g_adapted = self.conv(g_resized) # [B, N, N]
-        # 4) reshape back to per-head bias
-        g_adapted = g_adapted_fold.reshape(ba, he, n_q, n_k)  # [B, H, N, N]
-
-        g_adapted = torch.tanh(g_adapted)
+        # --- broadcast to match attn_scores shape ---
+        # [B,H,N,N]
+        g_adapted = g_adapted_base.expand(ba, he, n_q, n_k)
 
         # Debugging information only first time
         if not self._printed_debug:
@@ -866,7 +858,7 @@ class SwinMIMICGraphClassifier(SwinMIMICClassifier):
             self.classifier_logits.register_hook(self._save_classifier_grad)
 
         # 4. Extract attention maps and features
-        att_maps_batch = self.attention_map_generator.extract(x)
+        att_maps_batch = self.attention_map_generator.extract_from_cached(x)
         self.att_maps_batch = att_maps_batch  # Store for use in inference
         features_dict_batch = xai_fe.extract_attention_batch_multiregion_torch(att_maps_batch, self.device,
                                                     threshold=ATTENTION_MAP_THRESHOLD, # Now defaults to 'percentile' threshold
