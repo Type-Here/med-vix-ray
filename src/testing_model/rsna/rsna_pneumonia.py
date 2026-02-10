@@ -17,7 +17,6 @@ from settings import MANUAL_GRAPH, MODELS_DIR
 from src.med_vix_ray import SwinMIMICGraphClassifier
 
 # Load the pre-trained model
-
 def load_pretrained_model() -> Tuple[SwinMIMICGraphClassifier, torch.device]:
     """
         Load the pre-trained SwinMIMICGraphClassifier model and its graph JSON.
