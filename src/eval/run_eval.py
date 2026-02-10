@@ -113,7 +113,7 @@ def main():
         generator.manual_seed(args.seed)
         test_loader.generator = generator
         # Ensure per-worker seeding still uses the provided seed
-        test_loader.worker_init_fn = lambda worker_id: seed_worker(worker_id, seed=args.seed)
+        test_loader.worker_init_fn = lambda worker_id: seed_worker(worker_id)
 
 
         out = evaluate_multilabel(med_model, test_loader=test_loader, n_boot=args.n_boot,
