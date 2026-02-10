@@ -7,18 +7,23 @@ import torch
 
 from settings import MIMIC_LABELS
 from bootstrap import bootstrap_multilabel
+from src.med_vix_ray import SwinMIMICGraphClassifier
 
 
 @torch.no_grad()
 def collect_probs_and_labels(
-    model: torch.nn.Module,
+    model: SwinMIMICGraphClassifier,
     loader: torch.utils.data.DataLoader,
     device: str,
+    use_nudger: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray]:
     model.eval()
 
     y_true_list = []
     y_prob_list = []
+
+    model.is_using_nudger = use_nudger
+
     count = 0
     length = len(loader)
     print("Collecting probs and labels")
@@ -40,13 +45,11 @@ def collect_probs_and_labels(
     count +=  1
     Y_true = np.concatenate(y_true_list, axis=0).astype(int)
     Y_prob = np.concatenate(y_prob_list, axis=0).astype(float)
-
-
     return Y_true, Y_prob
 
 
 def evaluate_multilabel(
-    model: torch.nn.Module,
+    model: SwinMIMICGraphClassifier,
     test_loader: torch.utils.data.DataLoader,
     device: Optional[str] = None,
     out_json: str = "results/test_eval.json",
@@ -60,6 +63,7 @@ def evaluate_multilabel(
     model = model.to(device)
 
     Y_true, Y_prob = collect_probs_and_labels(model, test_loader, device=device)
+    Y_true_ablation, Y_prob_ablation = collect_probs_and_labels(model, test_loader, device=device, use_nudger=False)
 
     results = bootstrap_multilabel(
         Y_true,
@@ -71,9 +75,22 @@ def evaluate_multilabel(
         alpha=0.05,
     )
 
+    results_ablation = bootstrap_multilabel(
+        Y_true_ablation,
+        Y_prob_ablation,
+        label_names=MIMIC_LABELS,
+        n_boot=n_boot,
+        seed=seed,
+        n_bins=n_bins,
+        alpha=0.05,
+    )
+
     out_path = Path(out_json)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(results, indent=2))
+
+    our_path_ablation = out_path.with_name(out_path.stem + "_ablation" + out_path.suffix)
+    our_path_ablation.write_text(json.dumps(results_ablation, indent=2))
 
     if save_npz:
         npz_path = Path(out_npz)
