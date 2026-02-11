@@ -1,9 +1,9 @@
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 
-from .metrics import compute_multilabel_metrics, to_dict as metrics_to_dict
-from .calibration import compute_multilabel_calibration, to_dict as cal_to_dict
-from .metrics import validate_multilabel_inputs
+from metrics import compute_multilabel_metrics, to_dict as metrics_to_dict
+from calibration import compute_multilabel_calibration, to_dict as cal_to_dict
+from metrics import validate_multilabel_inputs
 
 
 def percentile_ci(values: np.ndarray, alpha: float = 0.05) -> Tuple[float, float]:
@@ -46,6 +46,7 @@ def bootstrap_multilabel(
         "cal_intercept": {name: np.full(n_boot, np.nan, dtype=float) for name in label_names},
         "cal_slope": {name: np.full(n_boot, np.nan, dtype=float) for name in label_names},
     }
+    print("Bootstrap starting...")
 
     for b in range(n_boot):
         idx = rng.choice(np.arange(n), size=n, replace=True)
@@ -69,6 +70,9 @@ def bootstrap_multilabel(
             boot_perlabel["mce"][name][b] = c["mce"][name]
             boot_perlabel["cal_intercept"][name][b] = c["cal_intercept"][name]
             boot_perlabel["cal_slope"][name][b] = c["cal_slope"][name]
+
+        if b % 50 == 0:
+            print(f"Completed {b} / {n_boot} bootstrap replicates")
 
     def ci_dict_from_array(arr: np.ndarray) -> Dict[str, float]:
         if np.all(np.isnan(arr)):

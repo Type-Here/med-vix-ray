@@ -19,7 +19,9 @@ def collect_probs_and_labels(
 
     y_true_list = []
     y_prob_list = []
-
+    count = 0
+    length = len(loader)
+    print("Collecting probs and labels")
     for batch in loader:
         # batch is tuple: (image, labels) OR (image, labels, study_id)
         x = batch[0].to(device, non_blocking=True)
@@ -33,9 +35,13 @@ def collect_probs_and_labels(
 
         y_true_list.append(y)
         y_prob_list.append(prob)
-
+    if count % 100 == 0:
+        print(f"Processed {count} batches out of {length}")
+    count +=  1
     Y_true = np.concatenate(y_true_list, axis=0).astype(int)
     Y_prob = np.concatenate(y_prob_list, axis=0).astype(float)
+
+
     return Y_true, Y_prob
 
 

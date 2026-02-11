@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
-from .metrics import validate_multilabel_inputs
+from metrics import validate_multilabel_inputs
 
 
 def expected_calibration_error_1d(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 15):

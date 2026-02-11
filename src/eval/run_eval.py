@@ -5,13 +5,12 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from env_test.rocm_test import result
 from settings import MODELS_DIR, MANUAL_GRAPH
 from src import general
 from src.eval.eval import evaluate_multilabel
 from src.med_vix_ray import SwinMIMICGraphClassifier
-from .bootstrap import bootstrap_multilabel
-from .metrics import validate_multilabel_inputs
+from bootstrap import bootstrap_multilabel
+from metrics import validate_multilabel_inputs
 
 # Function to set the seed for each worker
 def seed_worker(worker_id):
@@ -106,18 +105,21 @@ def main():
 
     if not args.npz:
         print("No npz file provided. Using dataloader...")
-        test_loader = general.get_test_dataloader(pin_memory=True, full_data=True)
+        test_loader = general.get_test_dataloader(pin_memory=True, full_data=True, use_bucket=False)
 
         # Set the worker_init_fn to ensure reproducibility in each worker# Create a CPU Generator seeded for reproducibility and attach it to the DataLoader
         generator = torch.Generator(device='cpu')
         generator.manual_seed(args.seed)
         test_loader.generator = generator
         # Ensure per-worker seeding still uses the provided seed
-        test_loader.worker_init_fn = lambda worker_id: seed_worker(worker_id, seed=args.seed)
+        test_loader.worker_init_fn = lambda worker_id: seed_worker(worker_id)
 
 
         out = evaluate_multilabel(med_model, test_loader=test_loader, n_boot=args.n_boot,
                                       seed=args.seed, n_bins=args.n_bins)
+
+        #Y_true, Y_prob, label_names = out['Y_true'], out['Y_prob'], out.get('label_names')
+
     else:
         Y_true, Y_prob, label_names = load_npz(args.npz)
         Y_true, Y_prob, label_names = validate_multilabel_inputs(Y_true, Y_prob, label_names)
