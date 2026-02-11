@@ -195,3 +195,7 @@ gcloud/*
 
 # Ignore ner - graph sign comparison files and directories
 ontology/report_keywords/*
+
+# Test Results
+src/test_results/
+src/eval/results/
