@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
-from src.testing_model.vindr import (iou_xyxy, dice_xyxy, attn_to_box, attn_to_box_dilated,
+from src.testing_model.vindr.vindr_abl_iou import (iou_xyxy, dice_xyxy, attn_to_box, attn_to_box_dilated,
                    compute_center_point_recall, bootstrap_iou)
 from src.testing_model.vindr.vindr_abl_iou import load_pretrained_model
 
@@ -161,7 +161,7 @@ class MSCXRDataset(Dataset):
             img,
             channels_mode=self.channels_mode,
             image_size=self.image_size,
-            view_position=self.view_position,
+            view_position=r["view_position"] if "view_position" in r else self.view_position,
             augment=False,
             is_train=False,
         )
@@ -202,11 +202,12 @@ def run_mscxr(
         if am.ndim == 4:
             am = am[:, 0]  # [B,256,256]
 
-        for i, iid in enumerate(image_ids):
+        for idx, iid in enumerate(image_ids):
             iid = str(iid)
-            attn_maps[iid] = am[i].astype(np.float32)
-            ow, oh = shapes[i]
-            orig_shapes[iid] = (int(ow), int(oh))
+            attn_maps[iid] = am[idx].astype(np.float32)
+            # shapes may be:
+            #  - a sequence of per-sample (w,h) entries (list/tuple or tensor [B,2])
+            orig_shapes[iid] = (int(shapes[0][idx]), int(shapes[1][idx]))
 
     y_score = np.concatenate(all_scores, axis=0) if all_scores else np.zeros((0, n_labels), dtype=np.float32)
     return y_score, all_ids, attn_maps, orig_shapes
@@ -250,7 +251,7 @@ def compute_iou_stats_mscxr(
                 orig_h=int(oh),
                 resize_short=288,
                 crop_to=256,
-                view_position=view_position,
+                view_position=r["view_position"] if "view_position" in r else view_position,
             )
             if tb is not None:
                 gt_boxes.append(tb)
@@ -306,8 +307,19 @@ def main():
       - MS_CXR_RESULTS_JSON: output metrics json
     """
     mimic_root = os.getenv("MIMIC_DATASET_PATH")
+    if mimic_root is None:
+        raise RuntimeError("Set env var MIMIC_DATASET_PATH to the "
+                           "root directory containing 'files/' for MIMIC-CXR.")
+    # remove redundant "files/" if end of path
+    if mimic_root and mimic_root.endswith("files"):
+        mimic_root = mimic_root[:-len("files")].rstrip("/")
+
     ms_csv = os.getenv("MS_CXR_CSV_PATH")
-    split = os.getenv("MS_CXR_SPLIT", None)
+    split = "test"  # default to test split
+    if "MS_CXR_SPLIT" in os.environ:
+        split = os.getenv("MS_CXR_SPLIT").lower()
+        if split not in {"train", "valid", "test"}:
+            raise ValueError(f"Invalid MS_CXR_SPLIT: {split}. Must be one of train/valid/test.")
 
     raw_json = os.getenv("MS_CXR_RAW_JSON", None)
     results_json = os.getenv("MS_CXR_RESULTS_JSON", "mscxr_iou_results.json")
@@ -326,6 +338,20 @@ def main():
 
     # Load model
     model, device = load_pretrained_model()
+
+    # Load test metaadata
+    import dataset.dataset_handle as dh
+    test_metadata = dh.fetch_metadata(phase="test", full_data=True, verify_existence=False)
+
+    # Retrieve view_position for each image_id from test_metadata (if available)
+    # and add a column to boxes_df. If not available, default to "AP".
+    if "view_position" in test_metadata[0]:
+        id_to_view = {str(m["dicom_id"]): m["view_position"] for m in test_metadata}
+        boxes_df["view_position"] = boxes_df["image_id"].astype(str).map(id_to_view).fillna("AP")
+        print(f"[INFO] Added view_position column to boxes_df based on test metadata.")
+    else:
+        boxes_df["view_position"] = "AP"
+        print(f"[INFO] view_position not found in test metadata; defaulting to AP for all images.")
 
     # Dataset/Loader
     ds = MSCXRDataset(
