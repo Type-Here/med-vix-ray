@@ -18,7 +18,7 @@ from sklearn.metrics import (
 from settings import MANUAL_GRAPH, MODELS_DIR
 from src.med_vix_ray import SwinMIMICGraphClassifier
 
-from raw_output_lazy_load import LazyAttnMaps, RawOutputsLazy, convert_vindr_json_to_disk
+from .raw_output_lazy_load import LazyAttnMaps, RawOutputsLazy, convert_vindr_json_to_disk
 
 
 # ----------------------------
