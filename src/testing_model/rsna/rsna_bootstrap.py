@@ -17,6 +17,7 @@ from sklearn.metrics import (
 
 from settings import MANUAL_GRAPH, MODELS_DIR
 from src.med_vix_ray import SwinMIMICGraphClassifier
+from src.testing_model.rsna.rsna_ft import adapt_model_to_rsna
 
 
 # ----------------------------
@@ -100,10 +101,12 @@ def load_pretrained_model() -> Tuple[SwinMIMICGraphClassifier, torch.device]:
 
     device = torch.device("cpu" if torch.version.hip else ("cuda" if torch.cuda.is_available() else "cpu"))
     model = SwinMIMICGraphClassifier(graph_json=graph_json, device=device).to(device)
+    adapt_model_to_rsna(model, device=device)
+    model.is_fine_tuning = False  # just to be safe
 
-    save_dir = os.path.join(MODELS_DIR, "med-vix-ray")
-    state_path = os.path.join(save_dir, "med_vixray_model_state.pth")
-    graph_path = os.path.join(save_dir, "med_vixray_model_graph.json")
+    save_dir = os.path.join(MODELS_DIR, "mvr-rsna")
+    state_path = os.path.join(save_dir, "rsna_finetuned_model_state.pth")
+    graph_path = os.path.join(save_dir, "rsna_finetuned_model_graph.json")
 
     if not os.path.exists(state_path):
         raise FileNotFoundError(f"Missing model state: {state_path}")
@@ -170,7 +173,8 @@ def rsna_inference_collect(model, loader, device) -> Dict[str, Any]:
     y_true_bin, y_pred_bin, y_score_bin = [], [], []
     y_true_ter, y_pred_ter = [], []
     pids_all = []
-
+    count = 0
+    len_all = len(loader)
     for x, y, pids in loader:
         x = x.to(device)
 
@@ -178,36 +182,40 @@ def rsna_inference_collect(model, loader, device) -> Dict[str, Any]:
         probs = torch.sigmoid(logits).cpu().numpy()
 
         # RSNA pneumonia-like score: max of (Pneumonia idx 11, Lung Opacity idx 7, Consolidation idx 2)
-        score = np.maximum.reduce([probs[:, 11], probs[:, 7], probs[:, 2]])
-        pred_bin = (score > 0.5).astype(np.int32)
+        #score = np.maximum.reduce([probs[:, 11], probs[:, 7], probs[:, 2]])
+        pred_bin = (probs > 0.5).astype(np.int32)
 
         # ternary mapping (discrete)
         # 0 = Normal (No Finding)
         # 2 = Lung Opacity / Pneumonia-like
         # 1 = Other
-        pred_ter = np.full((probs.shape[0],), 1, dtype=np.int32)
-        pred_ter[probs[:, 8] > 0.5] = 0  # No Finding
-        pred_ter[(probs[:, 11] > 0.5) | (probs[:, 7] > 0.5) | (probs[:, 2] > 0.5)] = 2
+        #pred_ter = np.full((probs.shape[0],), 1, dtype=np.int32)
+        #pred_ter[probs[:, 8] > 0.5] = 0  # No Finding
+        #pred_ter[(probs[:, 11] > 0.5) | (probs[:, 7] > 0.5) | (probs[:, 2] > 0.5)] = 2
 
         y_np = y.cpu().numpy()
         yb = y_np[:, 0].astype(np.int32)
-        yt = y_np[:, 1].astype(np.int32)
+        #yt = y_np[:, 1].astype(np.int32)
 
         y_true_bin.append(yb)
         y_pred_bin.append(pred_bin)
-        y_score_bin.append(score)
+        y_score_bin.append(probs)
 
-        y_true_ter.append(yt)
-        y_pred_ter.append(pred_ter)
+        #y_true_ter.append(yt)
+        #y_pred_ter.append(pred_ter)
 
         pids_all.extend(list(pids))
+
+        count += 1
+        if count % 100 == 0:
+            print(f"[INFO] Processed {count}/{len_all} batches ({(count/len_all)*100:.1f}%)")
 
     return {
         "y_true_bin": np.concatenate(y_true_bin),
         "y_pred_bin": np.concatenate(y_pred_bin),
         "y_score_bin": np.concatenate(y_score_bin),
-        "y_true_ter": np.concatenate(y_true_ter),
-        "y_pred_ter": np.concatenate(y_pred_ter),
+        #"y_true_ter": np.concatenate(y_true_ter),
+        #"y_pred_ter": np.concatenate(y_pred_ter),
         "patientIds": pids_all
     }
 
@@ -217,11 +225,11 @@ def bootstrap_rsna_metrics(collected: Dict[str, Any], n_boot=200, alpha=0.05, se
     n = len(collected["y_true_bin"])
 
     point_bin = compute_binary_metrics(collected["y_true_bin"], collected["y_pred_bin"], collected["y_score_bin"])
-    point_ter = compute_ternary_metrics(collected["y_true_ter"], collected["y_pred_ter"])
+    #point_ter = compute_ternary_metrics(collected["y_true_ter"], collected["y_pred_ter"])
 
     # bootstrap distributions
     boot_bin = {k: [] for k in point_bin.keys()}
-    boot_ter = {k: [] for k in point_ter.keys()}
+    #boot_ter = {k: [] for k in point_ter.keys()}
 
     for _ in range(n_boot):
         idx = rng.integers(0, n, size=n)  # resample rows
@@ -229,29 +237,29 @@ def bootstrap_rsna_metrics(collected: Dict[str, Any], n_boot=200, alpha=0.05, se
         ypb = collected["y_pred_bin"][idx]
         ysb = collected["y_score_bin"][idx]
 
-        ytt = collected["y_true_ter"][idx]
-        ypt = collected["y_pred_ter"][idx]
+        #ytt = collected["y_true_ter"][idx]
+        #ypt = collected["y_pred_ter"][idx]
 
         mb = compute_binary_metrics(ytb, ypb, ysb)
-        mt = compute_ternary_metrics(ytt, ypt)
+        #mt = compute_ternary_metrics(ytt, ypt)
 
         for k, v in mb.items():
             boot_bin[k].append(v)
-        for k, v in mt.items():
-            boot_ter[k].append(v)
+        #for k, v in mt.items():
+        #    boot_ter[k].append(v)
 
     ci_bin = {k: percentile_ci(np.array(v), alpha=alpha) for k, v in boot_bin.items()}
-    ci_ter = {k: percentile_ci(np.array(v), alpha=alpha) for k, v in boot_ter.items()}
+    #ci_ter = {k: percentile_ci(np.array(v), alpha=alpha) for k, v in boot_ter.items()}
 
     out = {
         "point": {
             "binary": point_bin,
-            "ternary": point_ter,
+            #"ternary": point_ter,
             "n": int(n)
         },
         "ci": {
             "binary": ci_bin,
-            "ternary": ci_ter
+            #"ternary": ci_ter
         },
         "meta": {
             "n": int(n),
@@ -262,11 +270,11 @@ def bootstrap_rsna_metrics(collected: Dict[str, Any], n_boot=200, alpha=0.05, se
             "ci_method": "percentile",
             "binary_score_definition": "max(sigmoid(logits[Pneumonia]), sigmoid(logits[LungOpacity]), "
                                        "sigmoid(logits[Consolidation]))",
-            "ternary_mapping": {
-                "0": "No Finding (if P(NoFinding)>0.5)",
-                "2": "Pneumonia-like (if any of Pneumonia/LungOpacity/Consolidation >0.5)",
-                "1": "Other"
-            }
+            #"ternary_mapping": {
+            #    "0": "No Finding (if P(NoFinding)>0.5)",
+            #    "2": "Pneumonia-like (if any of Pneumonia/LungOpacity/Consolidation >0.5)",
+            #    "1": "Other"
+            #}
         }
     }
     return out
@@ -299,23 +307,23 @@ if __name__ == "__main__":
 
     # save preds
     np.savez_compressed(
-        "rsna_preds.npz",
+        "../../test_results/rsna/rsna_preds.npz",
         y_true_bin=collected["y_true_bin"],
         y_pred_bin=collected["y_pred_bin"],
         y_score_bin=collected["y_score_bin"],
-        y_true_ter=collected["y_true_ter"],
-        y_pred_ter=collected["y_pred_ter"],
+        #y_true_ter=collected["y_true_ter"],
+        #y_pred_ter=collected["y_pred_ter"],
         patientIds=np.array(collected["patientIds"], dtype=object),
     )
 
     boot = bootstrap_rsna_metrics(collected, n_boot=200, alpha=0.05, seed=42)
 
-    with open("rsna_bootstrap.json", "w") as f:
+    with open("../../test_results/rsna/rsna_bootstrap.json", "w") as f:
         json.dump(boot, f, indent=2)
 
-    with open("rsna_point.json", "w") as f:
+    with open("../../test_results/rsna/rsna_point.json", "w") as f:
         json.dump(boot["point"], f, indent=2)
 
     print("[DONE] Saved: rsna_point.json, rsna_bootstrap.json, rsna_preds.npz")
     print("Binary (point):", boot["point"]["binary"])
-    print("Ternary (point):", boot["point"]["ternary"])
+    #print("Ternary (point):", boot["point"]["ternary"])
