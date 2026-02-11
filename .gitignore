@@ -199,3 +199,7 @@ ontology/report_keywords/*
 # Test Results
 src/test_results/
 src/eval/results/
+
+# Ignore raw disk data for testing models
+src/testing_model/vindr/vindr_raw_disk/
+src/testing_model/ms-cxr/ms-cxr_raw_disk/
