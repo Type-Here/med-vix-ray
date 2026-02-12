@@ -32,7 +32,20 @@ def bootstrap_multilabel(
     # We'll collect bootstrap replicates for:
     # - global scalars: auroc_macro, auprc_macro, brier_macro, logloss_macro, auroc_micro, auprc_micro
     # - per-label scalars for auroc/auprc/brier/logloss and calibration brier/ece/mce/slope/intercept
-    scalar_keys = ["auroc_macro", "auprc_macro", "brier_macro", "logloss_macro", "auroc_micro", "auprc_micro"]
+    scalar_keys = [
+        "auroc_macro",
+        "auprc_macro",
+        "brier_macro",
+        "logloss_macro",
+        "f1_macro",
+        "precision_macro",
+        "recall_macro",
+        "auroc_micro",
+        "auprc_micro",
+        "f1_micro",
+        "precision_micro",
+        "recall_micro",
+    ]
 
     boot_scalars = {k: np.full(n_boot, np.nan, dtype=float) for k in scalar_keys}
     boot_perlabel = {
