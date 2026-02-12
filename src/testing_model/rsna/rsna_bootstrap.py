@@ -17,7 +17,7 @@ from sklearn.metrics import (
 
 from settings import MANUAL_GRAPH, MODELS_DIR
 from src.med_vix_ray import SwinMIMICGraphClassifier
-from src.testing_model.rsna.rsna_ft import adapt_model_to_rsna
+from src.testing_model.rsna.rsna_ft import adapt_model_to_rsna, manage_dataset
 
 
 # ----------------------------
@@ -293,15 +293,12 @@ if __name__ == "__main__":
 
     model, device = load_pretrained_model()
 
-    df_grouped = build_rsna_grouped_df(rsna_csv_binary, rsna_csv_tern)
-
     # Fixed Subset for faster testing (5337 unique patientIds in total)
-    # df_grouped = df_grouped.sample(n=5337, random_state=42).reset_index(drop=True)
+    _, _ , test_dataset = manage_dataset()
 
-    dataset = RSNADataset(rsna_dir, df_grouped, image_size=(256, 256))
-    loader = DataLoader(dataset, batch_size=8, shuffle=False, num_workers=2, pin_memory=True)
+    loader = DataLoader(test_dataset, batch_size=8, shuffle=False, num_workers=2, pin_memory=True)
 
-    print(f"[INFO] RSNA rows (unique patientId): {len(dataset)}")
+    print(f"[INFO] RSNA rows (unique patientId): {len(test_dataset)}")
 
     collected = rsna_inference_collect(model, loader, device)
 
