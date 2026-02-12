@@ -45,6 +45,7 @@ def bootstrap_multilabel(
         "f1_micro",
         "precision_micro",
         "recall_micro",
+        "ece_macro",
     ]
 
     boot_scalars = {k: np.full(n_boot, np.nan, dtype=float) for k in scalar_keys}
@@ -70,7 +71,12 @@ def bootstrap_multilabel(
         c = cal_to_dict(compute_multilabel_calibration(yt, yp, label_names, n_bins=n_bins, keep_reliability=False))
 
         for k in scalar_keys:
-            boot_scalars[k][b] = m[k]
+            if k == "ece_macro":
+                # Mean ECE for all classe
+                ece_values = [c["ece"][name] for name in label_names]
+                boot_scalars[k][b] = float(np.mean(ece_values))
+            else:
+                boot_scalars[k][b] = m[k]
 
         for name in label_names:
             boot_perlabel["auroc"][name][b] = m["auroc"][name]

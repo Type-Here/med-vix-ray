@@ -119,4 +119,6 @@ def compute_multilabel_calibration(
 
 
 def to_dict(res: MultilabelCalibrationResults) -> Dict:
-    return asdict(res)
+    d = asdict(res)
+    d["ece_macro"] = float(np.mean(list(res.ece.values())))
+    return d
