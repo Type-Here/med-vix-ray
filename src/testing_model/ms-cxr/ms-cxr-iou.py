@@ -429,6 +429,9 @@ def main():
     # Bootstrap on tight IoU
     boot = bootstrap_iou(iou_tight["ious"], n_boot=200, alpha=0.05, seed=42)
 
+    # Bootstrap for Dice
+    dice_boot = bootstrap_iou(dice["ious"], n_boot=200, alpha=0.05, seed=42)
+
     out = {
         "dataset": "MS-CXR",
         "split": split,
@@ -439,6 +442,7 @@ def main():
         "iou_dilated": {k: v for k, v in iou_dil.items() if k not in {"ious", "image_ids"}},
         "dice_dilated": {k: v for k, v in dice.items() if k not in {"ious", "image_ids"}},
         "bootstrap_iou_tight": boot,
+        "bootstrap_dice_dilated": dice_boot,
         "meta_notes": [
             "BBoxes transformed using Resize(short=288, aspect-preserving) + CenterCrop(256) to match preprocessing.",
             "PA flipping disabled (view_position fixed to AP) unless per-image metadata is provided.",

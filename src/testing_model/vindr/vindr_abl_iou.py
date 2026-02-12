@@ -851,6 +851,9 @@ if __name__ == "__main__":
                                         thr_q=thr, use_percentile=True, attn_to_box_fn=attn_to_box_dilated)  # reuse dilated boxes for DICE
         print(f"DICE ({thr*100}th percentile, dilated): mean={dice_stats['mean_iou']:.4f}")
 
+        # Bootstrap for Dice
+        dice_boot = bootstrap_iou(dice_stats["ious"], n_boot=200, alpha=0.05, seed=42)
+
         print("\n============================\n")
 
         # 2. Per-class breakdown
@@ -887,7 +890,8 @@ if __name__ == "__main__":
             "dilated_iou": {k: v for k, v in iou_dilated.items() if k not in {"ious", "image_ids"}},
             "dice": {k: v for k, v in dice_stats.items() if k not in {"ious", "image_ids"}},
             "per_class_dice": per_class,
-            "bootstrap": iou_boot
+            "bootstrap": iou_boot,
+            "bootstrap_dice": dice_boot
         }
 
 
