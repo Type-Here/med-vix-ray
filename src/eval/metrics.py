@@ -171,8 +171,6 @@ def compute_multilabel_metrics(
         f1_micro=f1_micro,
         precision_micro=precision_micro,
         recall_micro=recall_micro,
-        auroc_micro=auroc_micro,
-        auprc_micro=auprc_micro,
         prevalence=prev,
         auroc=auroc,
         auprc=auprc,

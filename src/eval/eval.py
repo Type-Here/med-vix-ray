@@ -69,8 +69,8 @@ def evaluate_multilabel(
     Y_true, Y_prob = collect_probs_and_labels(model, test_loader, device=device)
     Y_true_ablation, Y_prob_ablation = collect_probs_and_labels(model, test_loader, device=device, use_nudger=False)
 
-    out_json = out_json.split('.')[0] + f"_{'_base_ft' if isinstance(model, SwinMIMICClassifier) else ''}" + ".json"
-    out_npz = out_npz.split('.')[0] + f"_{'_base_ft' if isinstance(model, SwinMIMICClassifier) else ''}" + ".npz"
+    out_json = out_json.split('.')[0] + f"_{'_base_ft' if not isinstance(model, SwinMIMICGraphClassifier) else ''}" + ".json"
+    out_npz = out_npz.split('.')[0] + f"_{'_base_ft' if not isinstance(model, SwinMIMICGraphClassifier) else ''}" + ".npz"
 
     results = bootstrap_multilabel(
         Y_true,
