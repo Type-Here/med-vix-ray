@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -8,11 +8,12 @@ import torch
 from settings import MIMIC_LABELS
 from bootstrap import bootstrap_multilabel
 from src.med_vix_ray import SwinMIMICGraphClassifier
+from src.fine_tuned_model import SwinMIMICClassifier
 
 
 @torch.no_grad()
 def collect_probs_and_labels(
-    model: SwinMIMICGraphClassifier,
+    model: Union[SwinMIMICGraphClassifier,SwinMIMICClassifier],
     loader: torch.utils.data.DataLoader,
     device: str,
     use_nudger: bool = True,
@@ -22,7 +23,8 @@ def collect_probs_and_labels(
     y_true_list = []
     y_prob_list = []
 
-    model.is_using_nudger = use_nudger
+    if isinstance(model, SwinMIMICGraphClassifier):
+        model.is_using_nudger = use_nudger
 
     count = 0
     length = len(loader)
@@ -40,16 +42,18 @@ def collect_probs_and_labels(
 
         y_true_list.append(y)
         y_prob_list.append(prob)
-    if count % 100 == 0:
-        print(f"Processed {count} batches out of {length}")
-    count +=  1
+
+        if count % 100 == 0:
+            print(f"Processed {count} batches out of {length}")
+        count +=  1
+
     Y_true = np.concatenate(y_true_list, axis=0).astype(int)
     Y_prob = np.concatenate(y_prob_list, axis=0).astype(float)
     return Y_true, Y_prob
 
 
 def evaluate_multilabel(
-    model: SwinMIMICGraphClassifier,
+    model: Union[SwinMIMICGraphClassifier, SwinMIMICClassifier],
     test_loader: torch.utils.data.DataLoader,
     device: Optional[str] = None,
     out_json: str = "results/test_eval.json",
@@ -64,6 +68,9 @@ def evaluate_multilabel(
 
     Y_true, Y_prob = collect_probs_and_labels(model, test_loader, device=device)
     Y_true_ablation, Y_prob_ablation = collect_probs_and_labels(model, test_loader, device=device, use_nudger=False)
+
+    out_json = out_json.split('.')[0] + f"_{'_base_ft' if isinstance(model, SwinMIMICClassifier) else ''}" + ".json"
+    out_npz = out_npz.split('.')[0] + f"_{'_base_ft' if isinstance(model, SwinMIMICClassifier) else ''}" + ".npz"
 
     results = bootstrap_multilabel(
         Y_true,
