@@ -2,7 +2,8 @@ from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 
-from sklearn.metrics import roc_auc_score, average_precision_score, log_loss
+from sklearn.metrics import (roc_auc_score, average_precision_score, log_loss,
+                             precision_score, recall_score, f1_score)
 
 
 def validate_multilabel_inputs(
@@ -49,10 +50,16 @@ class MultilabelMetricResults:
     auprc_macro: float
     brier_macro: float
     logloss_macro: float
+    f1_macro: float
+    precision_macro: float
+    recall_macro: float
 
     # micro over all label decisions (flatten)
     auroc_micro: float
     auprc_micro: float
+    f1_micro: float
+    precision_micro: float
+    recall_micro: float
 
     # per label dicts
     prevalence: Dict[str, float]
@@ -116,6 +123,29 @@ def compute_multilabel_metrics(
     brier_macro = float(np.mean(brier_arr))  # always finite
     logloss_macro = float(np.mean(ll_arr))   # always finite
 
+    # For F1/precision/recall we need thresholded predictions; use 0.5
+    y_pred = (Y_prob >= 0.5).astype(int)
+
+    # macro: average across labels (handles missing classes via zero_division)
+    try:
+        precision_macro = float(precision_score(Y_true, y_pred, average="macro", zero_division=0))
+        recall_macro = float(recall_score(Y_true, y_pred, average="macro", zero_division=0))
+        f1_macro = float(f1_score(Y_true, y_pred, average="macro", zero_division=0))
+    except Exception:
+        precision_macro = float("nan")
+        recall_macro = float("nan")
+        f1_macro = float("nan")
+
+    # micro: global (equivalent to flatten)
+    try:
+        precision_micro = float(precision_score(Y_true, y_pred, average="micro", zero_division=0))
+        recall_micro = float(recall_score(Y_true, y_pred, average="micro", zero_division=0))
+        f1_micro = float(f1_score(Y_true, y_pred, average="micro", zero_division=0))
+    except Exception:
+        precision_micro = float("nan")
+        recall_micro = float("nan")
+        f1_micro = float("nan")
+
     # micro: flatten all label decisions
     yt_flat = Y_true.reshape(-1)
     yp_flat = Y_prob.reshape(-1)
@@ -133,6 +163,14 @@ def compute_multilabel_metrics(
         auprc_macro=auprc_macro,
         brier_macro=brier_macro,
         logloss_macro=logloss_macro,
+        f1_macro=f1_macro,
+        precision_macro=precision_macro,
+        recall_macro=recall_macro,
+        auroc_micro=auroc_micro,
+        auprc_micro=auprc_micro,
+        f1_micro=f1_micro,
+        precision_micro=precision_micro,
+        recall_micro=recall_micro,
         auroc_micro=auroc_micro,
         auprc_micro=auprc_micro,
         prevalence=prev,
