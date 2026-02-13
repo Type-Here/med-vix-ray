@@ -158,7 +158,7 @@ def extract_attention_batch_multiregion_torch(attn_maps: torch.Tensor, device: t
                                               threshold='percentile', min_area_frac: float = 0.0005,
                                               max_regions_per_image: int = MAX_REGIONS_PER_IMAGE,
                                               current_epoch=10, max_epoch=10,
-                                              max_q: float = 0.92, min_q: float = 0.65
+                                              max_q: float = 0.95, min_q: float = 0.65
                                               ) -> list[list[Tensor]]:
     """
     Optimized multiregion feature extraction with optional sign matching capability.
