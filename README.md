@@ -103,29 +103,29 @@ output = model(<image_tensor>)
 
 Compared to a strong SwinV2-based baseline, Med-ViX-Ray shows consistent improvements across micro-F1, macro AUC, and recall, thanks to the integration of clinical priors and the Nudger refinement module.
 
-| Model                    | F1 (micro) | F1 (macro) | AUC ROC (macro) | Recall | Precision |
-|--------------------------|------------|------------|-----------------|--------|-------|
-| **Med-ViX-Ray**          | **0.561**  | **0.393**  | **0.788**       | **0.715** | 0.462 |
-| Med-ViX-Ray w/o Nudger  | **0.567**  | 0.385      | **0.790**       | 0.679  | 0.486 |
-| Baseline (Swin FT only) | 0.496      | 0.285      | 0.745           | 0.466  | **0.530** |
-
+| Model                   | F1 (micro)                     | F1 (macro)                     | AUC ROC (macro)                | Recall                          | Precision                      |
+|-------------------------|--------------------------------|--------------------------------|--------------------------------|---------------------------------|--------------------------------|
+| **Med-ViX-Ray**         | **0.558** <br/> [0.548, 0.567] | **0.396** <br/> [0.382, 0.410] | **0.788** <br/> [0.778, 0.795] | **0.734** <br/>  [0.723, 0.745] | 0.450 <br/>[0.440, 0.459]      |
+| Med-ViX-Ray w/o Nudger  | **0.567** <br/> [0.558, 0.576] | 0.385 <br/> [0.371, 0.401]     | **0.790** <br/> [0.781, 0.798] | 0.679  <br/> [0.669, 0.691]     | 0.486 <br/>[0.476, 0.496]      |
+| Baseline (Swin FT only) | 0.496 <br/> [0.485, 0.507]     | 0.285 <br/> [0.275, 0.296]     | 0.745  <br/> [0.736, 0.755]    | 0.466  <br/> [0.455, 0.478]     | **0.530** <br/> [0.516, 0.543] |
+ 
 > Med-ViX-Ray achieves a strong balance between precision and recall. The Nudger module acts as a tunable recall booster, helping tailor sensitivity to clinical use cases.
 
 ---
 
-### 🔹 Zero-Shot Generalization on VinDR-CXR
+### 🔹 Cross-Dataset Generalization on VinDR-CXR
 
-Med-ViX-Ray also exhibits promising generalization in zero-shot settings without retraining, compared with state-of-the-art models.
+Med-ViX-Ray also exhibits promising generalization in zero-shot settings without retraining. For VinDR-CXR, we needed a label mapping to align the VinDR labels with the MIMIC label set, which may have affected performance on certain pathologies.
 
 | Model           | Lung Opacity | Cardiomegaly | Pleural Thick. | Pleural Effusion | Mean AUC |
 |-----------------|--------------|--------------|----------------|------------------|----------|
-| **Med-ViX-Ray** | **0.190**    | 0.738        | **0.482**      | 0.495            | 0.476    |
+| **Med-ViX-Ray** | **0.190**    | 0.738        | **0.482**      | 0.768            | 0.476    |
 | RAD-DINO        | 0.149        | 0.699        | 0.366          | **0.778**        | 0.498    |
 | CheXzero        | 0.111        | 0.744        | 0.251          | 0.602            | 0.435    |
 | BioViL-T        | 0.127        | 0.514        | 0.244          | 0.541            | 0.357    |
 | MRM             | 0.122        | **0.797**    | 0.358          | 0.772            | 0.512    |
 
-> Despite no fine-tuning on VinDR, Med-ViX-Ray performs competitively on complex pathologies, especially pleural thickening and cardiomegaly.
+> Despite no fine-tuning on VinDR, Med-ViX-Ray performs competitively on complex pathologies, especially pleural effusion and cardiomegaly.
 
 ---
 
@@ -144,7 +144,7 @@ This interpretability is enabled by:
 - A symbolic graph of 14 conditions and 40 radiological signs.
 - A “Nudger” module that updates predictions based on probabilistic matching between attention regions and known signs.
 
-> 🧠 Med-ViX-Ray provides visual and semantic reasoning that mimics a radiologist’s decision process, improving trust and traceability in medical AI systems.
+> 🧠 Med-ViX-Ray provides visual and semantic reasoning that is intended to mimic a radiologist’s decision process, offering insights into both what the model is “looking at” and why it is making certain predictions.
 
 ---
 
