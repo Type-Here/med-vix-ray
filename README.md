@@ -158,10 +158,9 @@ This is to comply with the MIMIC dataset’s usage policy and to protect patient
 
 ---
 
-## 📄 Citation
-
-v1.00.00 is archived on Zenodo:  
-[![DOI](https://zenodo.org/badge/944608098.svg)](https://doi.org/10.5281/zenodo.17009381)
+## 📄 
+v1.00.10 is archived on Zenodo:  
+[![DOI](https://zenodo.org/badge/944608098.svg)](https://doi.org/10.5281/zenodo.18664746)
 
 Always latest at:  
 [https://doi.org/10.5281/zenodo.17009380](https://doi.org/10.5281/zenodo.17009380)
@@ -179,9 +178,9 @@ or bibtex:
   title        = {Med-ViX-Ray: Interpretable Chest X-Ray Diagnosis via Symbolic Reasoning},
   year         = {2025},
   publisher    = {Zenodo},
-  version      = {1.0.0},
-  doi          = {10.5281/zenodo.17009381},
-  url          = {https://doi.org/10.5281/zenodo.17009381}
+  version      = {1.0.1},
+  doi          = {10.5281/zenodo.18664746},
+  url          = {https://doi.org/10.5281/zenodo.18664746}
 }
 ```
 
