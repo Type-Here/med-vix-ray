@@ -165,24 +165,32 @@ v1.00.10 is archived on Zenodo:
 Always latest at:  
 [https://doi.org/10.5281/zenodo.17009380](https://doi.org/10.5281/zenodo.17009380)
 
-If you use this code, please cite it as:  
-`Cieri, M. (2025). Type-Here/med-vix-ray: Med-Vix-Ray v1.0.0 (v1.0.0). Zenodo. 
-https://doi.org/10.5281/zenodo.17009381`
-
-or bibtex:
-
+If you use this code, please cite:  
 ```bibtex
-@software{Cieri_Palomba__medvixray_2025,
-  author       = {Cieri M. and Palomba F.},
-  license      = {GNU General Public License v3.0},
-  title        = {Med-ViX-Ray: Interpretable Chest X-Ray Diagnosis via Symbolic Reasoning},
-  year         = {2025},
-  publisher    = {Zenodo},
-  version      = {1.0.1},
-  doi          = {10.5281/zenodo.18664746},
-  url          = {https://doi.org/10.5281/zenodo.18664746}
+@article{CIERI2026109313,
+title = {Med-ViX-Ray: Enhancing explainable chest X-ray analysis with clinical knowledge graphs},
+journal = {Computer Methods and Programs in Biomedicine},
+volume = {280},
+pages = {109313},
+year = {2026},
+issn = {0169-2607},
+doi = {https://doi.org/10.1016/j.cmpb.2026.109313},
+url = {https://www.sciencedirect.com/science/article/pii/S0169260726000817},
+author = {Manuel Cieri and Fabio Palomba},
+keywords = {AI, Medicine, CXR, Explainability, Transformer, Knowledge-guided},
+abstract = {Background and Objective:
+  Deep learning has achieved remarkable success in chest x-ray interpretation, yet most models remain black boxes, producing accurate predictions without exposing the clinical reasoning behind them. This opacity limits trust   and adoption in real-world practice. We introduce Med-ViX-Ray, a knowledge-guided and interpretable framework that integrates symbolic clinical reasoning into a vision Transformer backbone.
+  Methods:
+  The model leverages a structured graph of radiological signs and conditions, aligning image attention maps with domain knowledge through a probabilistic soft-matching module and a nudging mechanism that refines classifier   outputs. This dual integration allows predictions to be explained in terms of clinically meaningful signs and corresponding image regions, offering transparency beyond post-hoc heatmaps. We evaluated Med-ViX-Ray on MIMIC-CXR for training and internal validation, and tested its generalization on VinDR-CXR and RSNA Pneumonia benchmarks.
+  Results:
+  The proposed method improves recall and F1-score compared to a strong SwinV2 baseline (Respectively, F1-micro: 0.561 - 0.456; Precision: 0.462 - 0-529; Recall: 0.715 - 0.466; ROC: 0.788 - 0.744), while maintaining competitive overall performance. Qualitative analyses confirm that the model highlights clinically relevant regions and sign-activations aligned with radiological practice.
+  Conclusion:
+  These results suggest that knowledge-guided attention and sign-based explanations can enhance interpretability and recall in chest X-ray classification models. Future work will extend the framework toward report generation and prospective clinical evaluation.}
 }
 ```
+
+Link to the full paper: 
+[![DOI](https://img.shields.io/badge/Elsevier-grey?logo=elsevier&labelColor=white)](https://doi.org/10.1016/j.cmpb.2026.109313)
 
 ---
 
